@@ -213,7 +213,7 @@ def main() -> None:
             for key, value in medians.items()
         },
         "figures": METRIC_FIGURES,
-        "copied_to_latex": not args.generated_only,
+        "output_scope": "scientific_generated_figures_only",
     }
     (GENERATED_FIGURES.parent / "metric_figures_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print("wrote provenance: generated/metric_figures_manifest.json")

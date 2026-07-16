@@ -31,5 +31,5 @@
     "FigF_confusion.png",
     "FigG_score_by_type.png"
   ],
-  "copied_to_latex": false
+  "output_scope": "scientific_generated_figures_only"
 }

@@ -1,6 +1,6 @@
 {
   "command": "python3 code/reproducible_pipeline.py",
-  "git_commit": "pending_root_commit",
+  "git_commit": "75bca8cecb67e0e84d879f5b5ef73d428e2d7df8",
   "output_dir": "code/generated",
   "project_root": ".",
   "raw_dir": "code/raw_sources",
