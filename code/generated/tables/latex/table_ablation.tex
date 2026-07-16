@@ -1,0 +1,19 @@
+\begin{table}[htbp]
+\centering
+\caption{Feature-group ablation.}
+\label{tab:ablation_recomputed}
+\begin{tabular}{lrrr}
+\toprule
+Configuration & \$d\$ & Test AUROC & \$\textbackslash Delta\$ AUROC \\
+\midrule
+full & 69 & 0.854 & 0.000 \\
+go\_only & 60 & 0.793 & -0.061 \\
+jaccard\_only & 4 & 0.767 & -0.087 \\
+size\_only & 5 & 0.773 & -0.081 \\
+minus\_go & 9 & 0.847 & -0.007 \\
+minus\_jaccard & 65 & 0.820 & -0.034 \\
+minus\_size & 64 & 0.840 & -0.014 \\
+\bottomrule
+\end{tabular}
+
+\end{table}

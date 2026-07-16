@@ -1,0 +1,5 @@
+negative_type,xgboost_auroc,xgboost_auprc,ora_auroc,ora_auprc,best_ml_model,best_ml_auroc,best_ml_auprc,best_ml_f1
+random_gene_set,1.0,1.0,1.0,1.0,RBFSVM,1.0,1.0,0.991
+shuffled_pathway,0.997,0.999,1.0,1.0,ExtraTrees,1.0,1.0,0.991
+partial_pathway,0.644,0.789,0.695,0.815,GradientBoosting,0.682,0.801,0.765
+cross_pathway_mixture,0.747,0.848,0.689,0.796,LinearSVM,0.792,0.894,0.805

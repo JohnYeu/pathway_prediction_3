@@ -1,0 +1,52 @@
+{
+  "purpose": "13-model benchmark on new fixed curated 1:2 dataset",
+  "project_root": "/Users/yuzhuoye/PathwayML-Ath",
+  "benchmark_root": "new_dataset_benchmark",
+  "created_by_script": "new_dataset_benchmark/scripts/run_new_dataset_13_models.py",
+  "seed": 42,
+  "input": "new_dataset_benchmark/input/training_dataset_ratio_1_2_curated.csv",
+  "copied_input": "new_dataset_benchmark/outputs/input_training_dataset_ratio_1_2_curated.csv",
+  "outputs": {
+    "sample_metadata": "sample_metadata_with_go_coverage.csv",
+    "feature_matrix_npy": "feature_matrix.npy",
+    "feature_matrix_csv": "feature_matrix.csv",
+    "labels": "labels.npy",
+    "feature_names": "feature_names.csv",
+    "train_test_split": "train_test_split.csv",
+    "metrics": "model_metrics.csv",
+    "predictions": "model_test_predictions.csv",
+    "models": "models/*.joblib"
+  },
+  "top_models_by_test_auroc": [
+    {
+      "model": "AdaBoost",
+      "test_auroc": 0.8401869158878504,
+      "test_auprc": 0.6625268874671049,
+      "test_f1": 0.6521739130434783
+    },
+    {
+      "model": "XGBoost",
+      "test_auroc": 0.8341230167354924,
+      "test_auprc": 0.6604890640063741,
+      "test_f1": 0.6359832635983264
+    },
+    {
+      "model": "LightGBM",
+      "test_auroc": 0.8341230167354923,
+      "test_auprc": 0.6524944526424516,
+      "test_f1": 0.6557377049180327
+    },
+    {
+      "model": "Gradient Boosting",
+      "test_auroc": 0.8246902847207129,
+      "test_auprc": 0.6535979768404399,
+      "test_f1": 0.6066350710900474
+    },
+    {
+      "model": "CatBoost",
+      "test_auroc": 0.819821777874375,
+      "test_auprc": 0.6395098665688856,
+      "test_f1": 0.6666666666666666
+    }
+  ]
+}

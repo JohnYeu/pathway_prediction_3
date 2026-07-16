@@ -1,0 +1,2 @@
+dataset_source,n_pathways,n_kegg,n_aracyc,n_gene_go,n_raw_go_terms,n_selected_go,n_features,n_pathway_member_genes,n_go_annotated_pathway_genes,pathway_gene_go_coverage
+raw,538,155,383,28998,7067,60,69,7333,7184,0.9796808945861175

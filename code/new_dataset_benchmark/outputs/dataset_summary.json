@@ -1,0 +1,24 @@
+{
+  "input_file": "new_dataset_benchmark/outputs/input_training_dataset_ratio_1_2_curated.csv",
+  "input_sha256": "b540c1f70aa6c98b6eae30e440092d276170661b136c2a87fba3146d3c06c8a4",
+  "n_samples": 1608,
+  "n_positive": 536,
+  "n_negative": 1072,
+  "positive_sources": {
+    "AraCyc": 383,
+    "KEGG": 153
+  },
+  "strategies": {
+    "positive": 536,
+    "cross_pathway_mixture": 268,
+    "partial_pathway": 268,
+    "random_gene_set": 268,
+    "shuffled_pathway": 268
+  },
+  "feature_source": "PathwayML-Ath/data_robustness cached GO feature set",
+  "n_features": 69,
+  "n_selected_go": 60,
+  "n_train": 1286,
+  "n_test": 322,
+  "random_seed": 42
+}

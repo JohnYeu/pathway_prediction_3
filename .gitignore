@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+code/**/catboost_info/
+code/generated/latex_asset_backup_*/

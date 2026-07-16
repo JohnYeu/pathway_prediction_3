@@ -1,0 +1,19 @@
+{
+  "analysis": "Each benchmark uses all positives plus one negative strategy; models are retrained per strategy.",
+  "feature_matrix": "new_dataset_benchmark/outputs_ath_goslim/feature_matrix.csv",
+  "metadata": "new_dataset_benchmark/outputs_ath_goslim/sample_metadata.csv",
+  "seed": 42,
+  "test_size": 0.2,
+  "negative_types": [
+    "random_gene_set",
+    "shuffled_pathway",
+    "partial_pathway",
+    "cross_pathway_mixture"
+  ],
+  "include_stacking": true,
+  "outputs": {
+    "full_results": "new_dataset_benchmark/outputs_ath_goslim/single_negative_type_model_results.csv",
+    "test_predictions": "new_dataset_benchmark/outputs_ath_goslim/single_negative_type_test_predictions.csv",
+    "paper_summary": "new_dataset_benchmark/outputs_ath_goslim/single_negative_type_summary_for_paper.csv"
+  }
+}

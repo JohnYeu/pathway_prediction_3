@@ -1,0 +1,23 @@
+{
+  "seed": 42,
+  "training_file": "new_dataset_benchmark/input/training_dataset_ratio_1_2_curated.csv",
+  "training_file_sha256": "b540c1f70aa6c98b6eae30e440092d276170661b136c2a87fba3146d3c06c8a4",
+  "go_file": "new_dataset_benchmark/input/ATH_GO_GOSLIM.txt",
+  "go_file_sha256": "8cf1478d2c81259309a22ab23e42459a9a7cd79cb900b44aa8a891ad3ec81580",
+  "n_total": 1608,
+  "n_positive": 536,
+  "n_negative": 1072,
+  "n_train": 1286,
+  "n_test": 322,
+  "go_raw_records": 317208,
+  "go_unique_pairs": 150291,
+  "go_pipeline": {
+    "all": 6929,
+    "freq_filtered": 813,
+    "variance_filtered": 691,
+    "selected": 60
+  },
+  "feature_dim": 69,
+  "cv_scheme": "not run",
+  "include_stacking": true
+}
