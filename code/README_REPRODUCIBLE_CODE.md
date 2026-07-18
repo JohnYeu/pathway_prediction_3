@@ -21,6 +21,8 @@ The pipeline regenerates the main intermediate products needed by the paper:
 - negative-source metadata: `generated/tables/negative_metadata.csv`
 - GO-selection audit: `generated/tables/go_selection_audit.csv`
 - CV split audit: `generated/tables/cv_split_audit.csv`
+- KEGG pathway filter audit: `generated/tables/kegg_pathway_filter_audit.csv`
+- compute environment: `generated/tables/compute_environment.csv`
 - LaTeX table fragments: `generated/tables/latex/*.tex`
 
 It also regenerates paper-facing replacement figures:
@@ -28,7 +30,8 @@ It also regenerates paper-facing replacement figures:
 - `generated/figures/Fig3_shap.png`
 - `generated/figures/Fig5_datastats.png`
 - `generated/figures/Fig6_lofo.png`
-- `generated/figures/Fig7_robustness.png`
+- `generated/figures/Fig7_robustness.png` (published by
+  `compare_primary_ratios.py` after the independent ratio branches are ready)
 - `generated/figures/Fig8_methods.png`
 - `generated/figures/Fig_ablation.png`
 
@@ -107,6 +110,30 @@ python3 reproducible_pipeline.py --sections all
 
 Full mode takes substantially longer because it reruns boosted trees,
 cross-validation, model comparison, LOFO, and feature importance.
+
+## Independent Primary-Ratio Comparisons
+
+The formal outputs in `generated/` use a 1:1 positive-to-negative ratio.
+Complete 1:2 through 1:5 sensitivity branches can be trained without
+overwriting them:
+
+```bash
+python3 reproducible_pipeline.py --full --sections all
+python3 make_metric_figures.py --primary-ratio 1
+python3 reproducible_pipeline.py --full --primary-ratio 2 --sections all
+python3 reproducible_pipeline.py --full --primary-ratio 3 --sections all
+python3 reproducible_pipeline.py --full --primary-ratio 4 --sections all
+python3 reproducible_pipeline.py --full --primary-ratio 5 --sections all
+python3 compare_primary_ratios.py --publish-dir generated
+```
+
+Use `--primary-ratio 2`, `3`, `4`, or `5` to write complete branches under
+`ratio_runs/ratio_1_2/` through `ratio_runs/ratio_1_5/`. A reproducibility
+snapshot of the formal 1:1 run is kept under `ratio_runs/ratio_1_1/`. The
+five-way comparison is written to `ratio_runs/comparison_all_ratios/`. Each
+branch generates its own controls and selects its own 60 GO terms from the
+corresponding training records. The comparison publishes normalized AUPRC
+alongside AUROC because the random AUPRC baseline changes with class prevalence.
 
 ## Reproducibility Inputs
 

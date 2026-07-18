@@ -1,0 +1,25 @@
+\begin{table}[htbp]
+\centering
+\caption{Systematic comparison of machine-learning methods.}
+\label{tab:method_comparison_recomputed}
+\begin{tabular}{rllrrrrr}
+\toprule
+Rank & Method & Protocol & Test AUROC & AUPRC & F1 & Brier & Time (s) \\
+\midrule
+1 & CatBoost & heldout\_only & 0.855 & 0.679 & 0.732 & 0.151 & 0.483 \\
+2 & XGBoost & heldout\_only & 0.854 & 0.682 & 0.712 & 0.156 & 0.872 \\
+3 & Random Forest & heldout\_only & 0.853 & 0.668 & 0.719 & 0.148 & 0.417 \\
+4 & Gradient Boosting & heldout\_only & 0.852 & 0.682 & 0.648 & 0.154 & 1.231 \\
+5 & LightGBM & heldout\_only & 0.851 & 0.679 & 0.708 & 0.157 & 1.341 \\
+6 & AdaBoost & heldout\_only & 0.837 & 0.628 & 0.626 & 0.200 & 0.382 \\
+7 & Extra Trees & heldout\_only & 0.837 & 0.660 & 0.674 & 0.169 & 0.300 \\
+8 & RBF SVM & heldout\_only & 0.815 & 0.640 & 0.530 & 0.165 & 0.193 \\
+9 & Logistic Regression & heldout\_only & 0.806 & 0.627 & 0.644 & 0.182 & 0.007 \\
+10 & Linear SVM & heldout\_only & 0.794 & 0.633 & 0.541 & 0.172 & 0.373 \\
+11 & k-NN (k=7) & heldout\_only & 0.787 & 0.586 & 0.578 & 0.173 & 0.032 \\
+12 & MLP & heldout\_only & 0.772 & 0.589 & 0.550 & 0.177 & 0.038 \\
+13 & Gaussian Naive Bayes & heldout\_only & 0.717 & 0.495 & 0.596 & 0.388 & 0.001 \\
+\bottomrule
+\end{tabular}
+
+\end{table}

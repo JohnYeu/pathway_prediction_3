@@ -1,0 +1,6 @@
+gene_set_type,n,median_score,false_positive_count_at_0_5
+curated_pathway,108,0.8073600232601166,0
+random_5_30,27,0.008470088243484497,0
+shuffled,27,0.007308888714760542,0
+partial_50_80,27,0.6609994173049927,19
+cross_pathway,27,0.348967045545578,12

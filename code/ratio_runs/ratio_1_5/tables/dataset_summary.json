@@ -1,0 +1,16 @@
+{
+  "dataset_source": "raw",
+  "n_aracyc": 383,
+  "n_features": 69,
+  "n_gene_go": 28998,
+  "n_go_annotated_pathway_genes": 7184,
+  "n_kegg": 155,
+  "n_pathway_member_genes": 7333,
+  "n_pathways": 538,
+  "n_raw_go_terms": 7067,
+  "n_selected_go": 60,
+  "pathway_gene_go_coverage": 0.9796808945861175,
+  "positive_fraction_test": 0.16666666666666666,
+  "positive_fraction_train": 0.16666666666666666,
+  "primary_ratio": "1:5"
+}

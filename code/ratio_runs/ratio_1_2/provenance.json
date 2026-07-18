@@ -1,0 +1,60 @@
+{
+  "command": "python3 code/reproducible_pipeline.py",
+  "git_commit": "75bca8cecb67e0e84d879f5b5ef73d428e2d7df8",
+  "output_dir": "code/generated",
+  "project_root": ".",
+  "raw_dir": "code/raw_sources",
+  "raw_source_checksums": [
+    {
+      "expected_sha256": "c46ada08ea3d9d7cb35f6e175fc148b1c6cbd464883f2343c5c11c5981f77177",
+      "file": "ATH_GO_GOSLIM.txt",
+      "matches_sha256sums": true,
+      "path": "code/raw_sources/ATH_GO_GOSLIM.txt",
+      "sha256": "c46ada08ea3d9d7cb35f6e175fc148b1c6cbd464883f2343c5c11c5981f77177",
+      "size_bytes": 68497182
+    },
+    {
+      "expected_sha256": "8e612ff73be6a70cfdb740cd11abc71cd6ee855e9bf6d0c8f957454d620a29f5",
+      "file": "aracyc_pathways.20251021",
+      "matches_sha256sums": true,
+      "path": "code/raw_sources/aracyc_pathways.20251021",
+      "sha256": "8e612ff73be6a70cfdb740cd11abc71cd6ee855e9bf6d0c8f957454d620a29f5",
+      "size_bytes": 1317875
+    },
+    {
+      "expected_sha256": "5bc2e6d7244b908fb1c8c567beb465e4b49c9af576ed00121fe190e0e142362d",
+      "file": "kegg_pathway_genes.txt",
+      "matches_sha256sums": true,
+      "path": "code/raw_sources/kegg_pathway_genes.txt",
+      "sha256": "5bc2e6d7244b908fb1c8c567beb465e4b49c9af576ed00121fe190e0e142362d",
+      "size_bytes": 398854
+    },
+    {
+      "expected_sha256": "daca22c2577cc9f4039aaee000c60a1bf2f4f8145a1b4b3e382e799160908509",
+      "file": "kegg_pathway_names.txt",
+      "matches_sha256sums": true,
+      "path": "code/raw_sources/kegg_pathway_names.txt",
+      "sha256": "daca22c2577cc9f4039aaee000c60a1bf2f4f8145a1b4b3e382e799160908509",
+      "size_bytes": 11972
+    },
+    {
+      "expected_sha256": "",
+      "file": "sha256sums.txt",
+      "matches_sha256sums": "",
+      "path": "code/raw_sources/sha256sums.txt",
+      "sha256": "0bf29032cdedb8123b7e299d48b3e4041a542c25a5ceae3e64d2badb90eb53ec",
+      "size_bytes": 353
+    },
+    {
+      "expected_sha256": "",
+      "file": "source_manifest.csv",
+      "matches_sha256sums": "",
+      "path": "code/raw_sources/source_manifest.csv",
+      "sha256": "eb051fe44a7c3ed3ba82e386fcb6f7a62438f6929dbf2a3b782a7b120e3fdf87",
+      "size_bytes": 1506
+    }
+  ],
+  "timestamp_utc": "2026-07-10T09:00:35.583431+00:00",
+  "working_tree_dirty": false,
+  "working_tree_dirty_scope": "source tree excluding code/generated* artifacts"
+}

@@ -1,0 +1,7 @@
+analysis_name,run_mode,model_comparison_protocol,n_splits,n_repeats,total_folds,random_state,metric_reported,error_term_type,output_table,primary_ratio,feature_selection_protocol,nested_feature_selection,negative_source_isolation
+seed42_reference_run,full,,5,3,15,42;7;13,CV AUROC plus held-out AUROC/AUPRC/F1/precision/recall,SD,tables/main_benchmark.csv,1:4,fixed_primary_training_selected,False,True
+negative_ratio_sensitivity,full,,5,3,15,42;7;13,CV AUROC plus held-out metrics for ratios 1:1 to 1:5,SD,tables/ratio_sensitivity.csv,1:4,fixed_primary_training_selected,False,True
+supplementary_model_comparison,full,heldout_only,,,,42,held-out AUROC/AUPRC/F1/precision/recall only,NA,tables/model_comparison.csv,1:4,fixed_primary_training_selected,False,True
+feature_ablation,full,,,,,42,held-out AUROC/AUPRC/F1/precision/recall,NA,tables/ablation.csv,1:4,fixed_primary_training_selected,False,True
+leave_one_family_out,full,,,,,42+100 train negatives; 42+200 test negatives,family-held-out AUROC/AUPRC/F1/precision/recall,NA,tables/lofo.csv,1:4,fixed_primary_training_selected,False,True
+feature_importance,full,,,,,42,SHAP/model feature attribution on held-out split,NA,tables/feature_importance.csv,1:4,fixed_primary_training_selected,False,True

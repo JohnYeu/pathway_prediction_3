@@ -1,0 +1,539 @@
+id,name,source,family,n_genes
+AC_ALACAT2-PWY,L-alanine degradation II (to D-lactate),AraCyc,AraCyc_Misc,8
+AC_ALANINE-DEG3-PWY,L-alanine degradation III,AraCyc,AraCyc_Misc,6
+AC_ALANINE-SYN2-PWY,L-alanine biosynthesis II,AraCyc,AraCyc_Misc,6
+AC_ARGSPECAT-PWY,spermine biosynthesis,AraCyc,AraCyc_Misc,6
+AC_ARGSYN-PWY,L-arginine biosynthesis I (via L-ornithine),AraCyc,AraCyc_AminoAcid,13
+AC_ARGSYNBSUB-PWY,L-arginine biosynthesis II (acetyl cycle),AraCyc,AraCyc_AminoAcid,13
+AC_ARO-PWY,chorismate biosynthesis I,AraCyc,AraCyc_Misc,10
+AC_ASPARAGINE-DEG1-PWY,L-asparagine degradation I,AraCyc,AraCyc_Misc,5
+AC_ASPARAGINE-DEG1-PWY-1,L-asparagine degradation III (mammalian),AraCyc,AraCyc_Misc,15
+AC_ASPARTATE-DEG1-PWY,L-aspartate degradation I,AraCyc,AraCyc_Misc,9
+AC_ASPARTATESYN-PWY,L-aspartate biosynthesis,AraCyc,AraCyc_Misc,9
+AC_ASPASN-ARA-PWY,superpathway of aspartate and asparagine biosynthesis,AraCyc,AraCyc_Misc,18
+AC_BRANCHED-CHAIN-AA-SYN-PWY,superpathway of branched chain amino acid biosynthesis,AraCyc,AraCyc_AminoAcid,21
+AC_BSUBPOLYAMSYN-PWY,spermidine biosynthesis I,AraCyc,AraCyc_Misc,7
+AC_CALVIN-PWY,Calvin-Benson-Bassham cycle,AraCyc,AraCyc_Misc,35
+AC_CAMALEXIN-SYN,camalexin biosynthesis,AraCyc,AraCyc_Misc,31
+AC_CHLOROPHYLL-SYN,"3,8-divinyl-chlorophyllide a biosynthesis I (aerobic, light-dependent)",AraCyc,AraCyc_Misc,10
+AC_CITRULBIO-PWY,L-citrulline biosynthesis,AraCyc,AraCyc_Misc,43
+AC_COA-PWY,coenzyme A biosynthesis I (bacteria),AraCyc,AraCyc_Misc,6
+AC_COMPLETE-ARO-ARA-PWY,"superpathway of phenylalanine, tyrosine and tryptophan biosynthesis",AraCyc,AraCyc_AminoAcid,32
+AC_CYANCAT-PWY,cyanate degradation,AraCyc,AraCyc_Misc,16
+AC_CYSTSYN-PWY,L-cysteine biosynthesis I,AraCyc,AraCyc_Misc,13
+AC_DETOX1-PWY,superoxide radicals degradation,AraCyc,AraCyc_Misc,11
+AC_DETOX1-PWY-1,reactive oxygen species degradation,AraCyc,AraCyc_Misc,20
+AC_DTDPRHAMSYN-PWY,dTDP-beta-L-rhamnose biosynthesis,AraCyc,AraCyc_Misc,7
+AC_ETHYL-PWY,ethene biosynthesis I (plants),AraCyc,AraCyc_Misc,23
+AC_FASYN-ELONG-PWY,fatty acid elongation -- saturated,AraCyc,AraCyc_Lipid,15
+AC_GLUCONEO-PWY,gluconeogenesis I,AraCyc,AraCyc_Misc,48
+AC_GLUCOSE1PMETAB-PWY,glucose and glucose-1-phosphate degradation,AraCyc,AraCyc_Carbohydrate,13
+AC_GLUTAMINDEG-PWY,L-glutamine degradation I,AraCyc,AraCyc_Misc,35
+AC_GLUTORN-PWY,L-ornithine biosynthesis I,AraCyc,AraCyc_Misc,10
+AC_GLYCLEAV-PWY,glycine cleavage,AraCyc,AraCyc_Misc,10
+AC_GLYCOLYSIS,glycolysis I (from glucose 6-phosphate),AraCyc,AraCyc_Carbohydrate,56
+AC_GLYOXYLATE-BYPASS,glyoxylate cycle,AraCyc,AraCyc_Misc,21
+AC_GLYSYN-ALA-PWY,glycine biosynthesis III,AraCyc,AraCyc_Misc,5
+AC_GLYSYN-PWY,glycine biosynthesis I,AraCyc,AraCyc_Misc,7
+AC_GLYSYN2-PWY,glycine biosynthesis,AraCyc,AraCyc_Misc,11
+AC_HEME-BIOSYNTHESIS-II,heme b biosynthesis I (aerobic),AraCyc,AraCyc_Misc,9
+AC_HISTSYN-PWY,L-histidine biosynthesis,AraCyc,AraCyc_Misc,11
+AC_HOMOSERSYN-PWY,L-homoserine biosynthesis,AraCyc,AraCyc_Misc,6
+AC_ILE-VAL-PWY,superpathway of isoleucine and valine biosynthesis,AraCyc,AraCyc_Misc,7
+AC_ILEUDEG-PWY,L-isoleucine degradation I,AraCyc,AraCyc_Misc,9
+AC_ILEUSYN-PWY,L-isoleucine biosynthesis I (from threonine),AraCyc,AraCyc_Misc,6
+AC_LEU-DEG2-PWY,L-leucine degradation I,AraCyc,AraCyc_Misc,13
+AC_LEUSYN-PWY,L-leucine biosynthesis,AraCyc,AraCyc_Misc,18
+AC_LIPAS-PWY,triacylglycerol degradation,AraCyc,AraCyc_Misc,44
+AC_LIPASYN-PWY,phospholipases,AraCyc,AraCyc_Misc,59
+AC_LYSINE-DEG2-PWY,lysine degradation II,AraCyc,AraCyc_AminoAcid,5
+AC_MANNOSYL-CHITO-DOLICHOL-BIOSYNTHESIS,protein N-glycosylation initial phase (eukaryotic),AraCyc,AraCyc_Misc,14
+AC_METHIONINE-DEG1-PWY,L-methionine degradation I (to L-homocysteine),AraCyc,AraCyc_AminoAcid,5
+AC_NAGLIPASYN-PWY,lipid IVA biosynthesis (E. coli),AraCyc,AraCyc_Lipid,9
+AC_NONMEVIPP-PWY,methylerythritol phosphate pathway I,AraCyc,AraCyc_Misc,10
+AC_NONOXIPENT-PWY,pentose phosphate pathway (non-oxidative branch) I,AraCyc,AraCyc_Misc,12
+AC_OXIDATIVEPENT-PWY,pentose phosphate pathway (oxidative branch) I,AraCyc,AraCyc_Misc,14
+AC_PANTO-PWY,phosphopantothenate biosynthesis I,AraCyc,AraCyc_Misc,9
+AC_PENTOSE-P-PWY,pentose phosphate pathway,AraCyc,AraCyc_Misc,26
+AC_PHOTOALL-PWY,oxygenic photosynthesis,AraCyc,AraCyc_Misc,53
+AC_POLYAMINSYN3-PWY,superpathway of polyamine biosynthesis II,AraCyc,AraCyc_Misc,12
+AC_PWY-1001,cellulose biosynthesis,AraCyc,AraCyc_Carbohydrate,27
+AC_PWY-101,photosynthesis light reactions I (plastocyanin),AraCyc,AraCyc_Misc,18
+AC_PWY-102,gibberellin inactivation I (2beta-hydroxylation),AraCyc,AraCyc_Misc,16
+AC_PWY-1042,glycolysis IV,AraCyc,AraCyc_Misc,51
+AC_PWY-1061,homogalacturonan biosynthesis,AraCyc,AraCyc_Misc,26
+AC_PWY-112,lupeol biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-1121,suberin monomers biosynthesis,AraCyc,AraCyc_Misc,59
+AC_PWY-1187,glucosinolate biosynthesis from homomethionine,AraCyc,AraCyc_AminoAcid,32
+AC_PWY-1722,"formate assimilation into 5,10-methylenetetrahydrofolate",AraCyc,AraCyc_Cofactor,7
+AC_PWY-1741,indole-3-acetate inactivation IX,AraCyc,AraCyc_Misc,5
+AC_PWY-1782,superpathway of indole-3-acetate conjugate biosynthesis,AraCyc,AraCyc_Misc,17
+AC_PWY-181,photorespiration I,AraCyc,AraCyc_Misc,23
+AC_PWY-2021,indole-3-acetate inactivation IV,AraCyc,AraCyc_Misc,12
+AC_PWY-2161,folate polyglutamylation,AraCyc,AraCyc_Cofactor,14
+AC_PWY-2181,free phenylpropanoid acid biosynthesis,AraCyc,AraCyc_Secondary,9
+AC_PWY-2261,ascorbate glutathione cycle,AraCyc,AraCyc_Misc,15
+AC_PWY-2301,myo-inositol biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-2463,(-)-medicarpin biosynthesis,AraCyc,AraCyc_Misc,9
+AC_PWY-2541,phytosterol biosynthesis (plants),AraCyc,AraCyc_Lipid,23
+AC_PWY-2582,brassinolide biosynthesis II,AraCyc,AraCyc_Misc,7
+AC_PWY-2681,trans-zeatin biosynthesis,AraCyc,AraCyc_Misc,9
+AC_PWY-282,cuticular wax biosynthesis,AraCyc,AraCyc_Lipid,15
+AC_PWY-2821,glucosinolate biosynthesis from phenylalanine,AraCyc,AraCyc_Misc,20
+AC_PWY-2902,cytokinin-O-glucosides biosynthesis,AraCyc,AraCyc_Misc,25
+AC_PWY-3001,superpathway of L-isoleucine biosynthesis I,AraCyc,AraCyc_Misc,25
+AC_PWY-3041,monoterpene biosynthesis,AraCyc,AraCyc_Misc,8
+AC_PWY-3101,flavonol biosynthesis,AraCyc,AraCyc_Misc,14
+AC_PWY-321,cutin biosynthesis,AraCyc,AraCyc_Misc,37
+AC_PWY-3461,L-tyrosine biosynthesis II,AraCyc,AraCyc_Misc,5
+AC_PWY-3462,L-phenylalanine biosynthesis II,AraCyc,AraCyc_Misc,10
+AC_PWY-3481,superpathway of L-phenylalanine and L-tyrosine biosynthesis,AraCyc,AraCyc_Misc,11
+AC_PWY-3561,choline biosynthesis III,AraCyc,AraCyc_Misc,11
+AC_PWY-3742,tetrahydrofolate biosynthesis II,AraCyc,AraCyc_Cofactor,25
+AC_PWY-3781,aerobic respiration I (cytochrome c),AraCyc,AraCyc_Misc,39
+AC_PWY-3801,sucrose degradation II (sucrose synthase),AraCyc,AraCyc_Carbohydrate,35
+AC_PWY-3841,folate transformations II (plants),AraCyc,AraCyc_Cofactor,24
+AC_PWY-3941,beta-alanine biosynthesis II,AraCyc,AraCyc_Misc,10
+AC_PWY-401,galactolipid biosynthesis I,AraCyc,AraCyc_Lipid,6
+AC_PWY-4041,gamma-glutamyl cycle,AraCyc,AraCyc_Misc,6
+AC_PWY-4081,glutathione-peroxide redox reactions,AraCyc,AraCyc_Misc,11
+AC_PWY-4101,D-sorbitol degradation I,AraCyc,AraCyc_Misc,18
+AC_PWY-4203,volatile benzenoid biosynthesis I (ester formation),AraCyc,AraCyc_Misc,13
+AC_PWY-4221,superpathway of coenzyme A biosynthesis II (plants),AraCyc,AraCyc_Misc,24
+AC_PWY-4221ARA,superpathway of pantothenate and coenzymeA biosynthesis,AraCyc,AraCyc_Misc,15
+AC_PWY-4302,aerobic respiration III (alternative oxidase pathway),AraCyc,AraCyc_Misc,36
+AC_PWY-4321,L-glutamate degradation IV,AraCyc,AraCyc_Misc,9
+AC_PWY-4361,S-methyl-5-thio-alpha-D-ribose 1-phosphate degradation I,AraCyc,AraCyc_Misc,8
+AC_PWY-4381,fatty acid biosynthesis initiation (type II),AraCyc,AraCyc_Lipid,6
+AC_PWY-4541,"lipid-dependent phytate biosynthesis I (via Ins(1,4,5)P3)",AraCyc,AraCyc_Lipid,8
+AC_PWY-4562,"lipid-dependent phytate biosynthesis II (via Ins(1,3,4)P3)",AraCyc,AraCyc_Lipid,12
+AC_PWY-4661,1D-myo-inositol hexakisphosphate biosynthesis III (Spirodela polyrrhiza),AraCyc,AraCyc_Misc,14
+AC_PWY-4702,phytate degradation I,AraCyc,AraCyc_Misc,5
+AC_PWY-4765,superpathway of lipid-dependent phytate biosynthesis,AraCyc,AraCyc_Lipid,12
+AC_PWY-4821,UDP-alpha-D-xylose biosynthesis,AraCyc,AraCyc_Misc,12
+AC_PWY-4841,UDP-alpha-D-glucuronate biosynthesis (from myo-inositol),AraCyc,AraCyc_Misc,7
+AC_PWY-4861,UDP-alpha-D-galacturonate biosynthesis I (from UDP-D-glucuronate),AraCyc,AraCyc_Misc,5
+AC_PWY-4984,urea cycle,AraCyc,AraCyc_Misc,5
+AC_PWY-5004,superpathway of L-citrulline metabolism,AraCyc,AraCyc_Misc,46
+AC_PWY-5027,phylloquinol biosynthesis,AraCyc,AraCyc_Misc,8
+AC_PWY-5035,gibberellin biosynthesis III (early C-13 hydroxylation),AraCyc,AraCyc_Misc,14
+AC_PWY-5041,S-adenosyl-L-methionine salvage II,AraCyc,AraCyc_AminoAcid,8
+AC_PWY-5044,purine nucleotides degradation I (plants),AraCyc,AraCyc_Nucleotide,23
+AC_PWY-5046,2-oxoisovalerate decarboxylation to isobutanoyl-CoA,AraCyc,AraCyc_Misc,8
+AC_PWY-5049,rosmarinic acid biosynthesis II,AraCyc,AraCyc_Misc,5
+AC_PWY-5068,chlorophyll cycle,AraCyc,AraCyc_Misc,6
+AC_PWY-5070,"gibberellin biosynthesis I (non C-3, non C-13 hydroxylation)",AraCyc,AraCyc_Misc,8
+AC_PWY-5079,L-phenylalanine degradation III,AraCyc,AraCyc_Misc,9
+AC_PWY-5080,very long chain fatty acid biosynthesis I,AraCyc,AraCyc_Lipid,44
+AC_PWY-5083,NAD(P)/NADPH interconversion,AraCyc,AraCyc_Misc,27
+AC_PWY-5084,2-oxoglutarate decarboxylation to succinyl-CoA,AraCyc,AraCyc_Misc,8
+AC_PWY-5097,L-lysine biosynthesis VI,AraCyc,AraCyc_AminoAcid,15
+AC_PWY-5098,chlorophyll a degradation I,AraCyc,AraCyc_Misc,9
+AC_PWY-5120,geranylgeranyl diphosphate biosynthesis,AraCyc,AraCyc_Misc,16
+AC_PWY-5121,superpathway of geranylgeranyl diphosphate biosynthesis II (via MEP),AraCyc,AraCyc_Misc,29
+AC_PWY-5122,geranyl diphosphate biosynthesis,AraCyc,AraCyc_Misc,15
+AC_PWY-5123,"trans, trans-farnesyl diphosphate biosynthesis",AraCyc,AraCyc_Misc,16
+AC_PWY-5125,anthocyanin biosynthesis,AraCyc,AraCyc_Misc,14
+AC_PWY-5129,sphingolipid biosynthesis (plants),AraCyc,AraCyc_Lipid,17
+AC_PWY-5136,fatty acid beta-oxidation II (plant peroxisome),AraCyc,AraCyc_Lipid,15
+AC_PWY-5137,"fatty acid beta-oxidation III (unsaturated, odd number)",AraCyc,AraCyc_Lipid,5
+AC_PWY-5138,"fatty acid beta-oxidation IV (unsaturated, even number)",AraCyc,AraCyc_Lipid,10
+AC_PWY-5142,acyl-[acyl-carrier protein] thioesterase pathway,AraCyc,AraCyc_Misc,7
+AC_PWY-5143,long-chain fatty acid activation,AraCyc,AraCyc_Lipid,12
+AC_PWY-5147,oleate biosynthesis I (plants),AraCyc,AraCyc_Misc,27
+AC_PWY-5156,superpathway of fatty acid biosynthesis II (plant),AraCyc,AraCyc_Lipid,47
+AC_PWY-5173,superpathway of acetyl-CoA biosynthesis,AraCyc,AraCyc_Misc,19
+AC_PWY-5188,tetrapyrrole biosynthesis I (from glutamate),AraCyc,AraCyc_Misc,9
+AC_PWY-5203,soybean saponin I biosynthesis,AraCyc,AraCyc_Misc,14
+AC_PWY-5267,glucosinolate activation,AraCyc,AraCyc_Misc,14
+AC_PWY-5269,cardiolipin biosynthesis II,AraCyc,AraCyc_Misc,5
+AC_PWY-5272,abscisic acid degradation by glucosylation,AraCyc,AraCyc_Misc,22
+AC_PWY-5320,kaempferol glycoside biosynthesis (Arabidopsis),AraCyc,AraCyc_Misc,18
+AC_PWY-5321,quercetin glycoside biosynthesis (Arabidopsis),AraCyc,AraCyc_Misc,38
+AC_PWY-5337,stachyose biosynthesis,AraCyc,AraCyc_Misc,13
+AC_PWY-5340,sulfate activation for sulfonation,AraCyc,AraCyc_Misc,6
+AC_PWY-5350,thiosulfate disproportionation IV (rhodanese),AraCyc,AraCyc_Misc,6
+AC_PWY-5366,palmitoleate biosynthesis II (plants and bacteria),AraCyc,AraCyc_Misc,6
+AC_PWY-5381,NAD salvage (plants),AraCyc,AraCyc_Misc,23
+AC_PWY-5386,methylglyoxal degradation I,AraCyc,AraCyc_Misc,11
+AC_PWY-5386-1,methylglyoxal degradation VIII,AraCyc,AraCyc_Misc,11
+AC_PWY-5390,rutin biosynthesis,AraCyc,AraCyc_Misc,43
+AC_PWY-5410,traumatin and (Z)-3-hexen-1-yl acetate biosynthesis,AraCyc,AraCyc_Misc,23
+AC_PWY-5453,methylglyoxal degradation III,AraCyc,AraCyc_Misc,11
+AC_PWY-5464,"superpathway of cytosolic glycolysis (plants), pyruvate dehydrogenase and TCA cycle",AraCyc,AraCyc_Misc,102
+AC_PWY-5484,glycolysis II (from fructose 6-phosphate),AraCyc,AraCyc_Misc,54
+AC_PWY-5486,pyruvate fermentation to ethanol II,AraCyc,AraCyc_Misc,5
+AC_PWY-561,superpathway of glyoxylate cycle and fatty acid degradation,AraCyc,AraCyc_Lipid,46
+AC_PWY-5659,GDP-mannose biosynthesis,AraCyc,AraCyc_Carbohydrate,12
+AC_PWY-5661,GDP-alpha-D-glucose biosynthesis,AraCyc,AraCyc_Carbohydrate,13
+AC_PWY-5667,CDP-diacylglycerol biosynthesis I,AraCyc,AraCyc_Misc,28
+AC_PWY-5670,epoxysqualene biosynthesis,AraCyc,AraCyc_Misc,9
+AC_PWY-5687,pyrimidine ribonucleotides interconversion,AraCyc,AraCyc_Nucleotide,21
+AC_PWY-5690,TCA cycle II (plants and fungi),AraCyc,AraCyc_Misc,35
+AC_PWY-5723,Rubisco shunt,AraCyc,AraCyc_Misc,36
+AC_PWY-5725,farnesene biosynthesis,AraCyc,AraCyc_Misc,9
+AC_PWY-5788,indole-3-acetate inactivation V,AraCyc,AraCyc_Misc,12
+AC_PWY-5791,"1,4-dihydroxy-2-naphthoate biosynthesis II (plants)",AraCyc,AraCyc_Misc,8
+AC_PWY-5800,xylan biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-5807,heptaprenyl diphosphate biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-581,indole-3-acetate biosynthesis II,AraCyc,AraCyc_Misc,34
+AC_PWY-5837,"2-carboxy-1,4-naphthoquinol biosynthesis",AraCyc,AraCyc_Misc,8
+AC_PWY-5859,eugenol and isoeugenol biosynthesis,AraCyc,AraCyc_Misc,5
+AC_PWY-5864,superpathway of plastoquinol biosynthesis,AraCyc,AraCyc_Misc,11
+AC_PWY-5868,simple coumarins biosynthesis,AraCyc,AraCyc_Secondary,25
+AC_PWY-5886,3-(4-hydroxyphenyl)pyruvate biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-5918,superpathway of heme b biosynthesis from glutamate,AraCyc,AraCyc_Misc,18
+AC_PWY-5934,iron reduction and absorption,AraCyc,AraCyc_Misc,10
+AC_PWY-5947,lutein biosynthesis,AraCyc,AraCyc_Misc,5
+AC_PWY-5957,L-nicotianamine biosynthesis,AraCyc,AraCyc_Misc,5
+AC_PWY-5963,molybdenum cofactor sulfulylation (eukaryotes),AraCyc,AraCyc_Cofactor,6
+AC_PWY-5971,palmitate biosynthesis II (type II fatty acid synthase),AraCyc,AraCyc_Lipid,33
+AC_PWY-5973,cis-vaccenate biosynthesis,AraCyc,AraCyc_Misc,20
+AC_PWY-5980,xylogalacturonan biosynthesis,AraCyc,AraCyc_Misc,27
+AC_PWY-5989,stearate biosynthesis II (bacteria and plants),AraCyc,AraCyc_Misc,33
+AC_PWY-5992,thalianol and derivatives biosynthesis,AraCyc,AraCyc_Misc,28
+AC_PWY-6007,"(3E)-4,8-dimethylnona-1,3,7-triene biosynthesis II",AraCyc,AraCyc_Misc,10
+AC_PWY-601,glucosinolate biosynthesis from tryptophan,AraCyc,AraCyc_AminoAcid,36
+AC_PWY-6012,acyl carrier protein metabolism,AraCyc,AraCyc_Misc,10
+AC_PWY-6014,vernolate biosynthesis I,AraCyc,AraCyc_Misc,8
+AC_PWY-6039,chlorogenic acid biosynthesis I,AraCyc,AraCyc_Misc,28
+AC_PWY-6040,chlorogenic acid biosynthesis II,AraCyc,AraCyc_Misc,21
+AC_PWY-6051,"2,4,6-trinitrotoluene degradation",AraCyc,AraCyc_Misc,8
+AC_PWY-6115,"avenacin biosynthesis, initial reactions",AraCyc,AraCyc_Misc,10
+AC_PWY-6117,spermine and spermidine degradation I,AraCyc,AraCyc_Misc,9
+AC_PWY-6118,glycerol-3-phosphate shuttle,AraCyc,AraCyc_Misc,5
+AC_PWY-6121,5-aminoimidazole ribonucleotide biosynthesis I,AraCyc,AraCyc_AminoAcid,7
+AC_PWY-6124,inosine-5'-phosphate biosynthesis II,AraCyc,AraCyc_Misc,6
+AC_PWY-6147,6-hydroxymethyl-dihydropterin diphosphate biosynthesis I,AraCyc,AraCyc_Misc,6
+AC_PWY-6163,chorismate biosynthesis from 3-dehydroquinate,AraCyc,AraCyc_Misc,6
+AC_PWY-6199,quercetin sulfate biosynthesis,AraCyc,AraCyc_Misc,13
+AC_PWY-621,sucrose degradation III (sucrose invertase),AraCyc,AraCyc_Carbohydrate,28
+AC_PWY-6219,indole-3-acetate inactivation VIII,AraCyc,AraCyc_Misc,12
+AC_PWY-622,starch biosynthesis,AraCyc,AraCyc_Carbohydrate,20
+AC_PWY-6266-ARA,superpathway of flavones and derivatives biosynthesis,AraCyc,AraCyc_Misc,38
+AC_PWY-63,UDP-beta-L-arabinose biosynthesis I (from UDP-alpha-D-xylose),AraCyc,AraCyc_Misc,5
+AC_PWY-6303,methyl indole-3-acetate interconversion,AraCyc,AraCyc_Misc,9
+AC_PWY-6317,D-galactose degradation I (Leloir pathway),AraCyc,AraCyc_Misc,7
+AC_PWY-6348,phosphate acquisition,AraCyc,AraCyc_Misc,34
+AC_PWY-6351,"D-myo-inositol (1,4,5)-trisphosphate biosynthesis",AraCyc,AraCyc_Misc,40
+AC_PWY-6352,3-phosphoinositide biosynthesis,AraCyc,AraCyc_Misc,39
+AC_PWY-6358,"superpathway of D-myo-inositol (1,4,5)-trisphosphate metabolism",AraCyc,AraCyc_Misc,10
+AC_PWY-6363,"D-myo-inositol (1,4,5)-trisphosphate degradation",AraCyc,AraCyc_Misc,10
+AC_PWY-6364,"D-myo-inositol (1,3,4)-trisphosphate biosynthesis",AraCyc,AraCyc_Misc,5
+AC_PWY-6367,D-myo-inositol-5-phosphate metabolism,AraCyc,AraCyc_Misc,10
+AC_PWY-6369,inositol diphosphates biosynthesis,AraCyc,AraCyc_Misc,10
+AC_PWY-641,proanthocyanidins biosynthesis from flavanols,AraCyc,AraCyc_Misc,9
+AC_PWY-6441,spermine and spermidine degradation III,AraCyc,AraCyc_Misc,5
+AC_PWY-6444,"benzoate biosynthesis II (CoA-independent, non-beta-oxidative)",AraCyc,AraCyc_Misc,6
+AC_PWY-6475,trans-lycopene biosynthesis II (oxygenic phototrophs and green sulfur bacteria),AraCyc,AraCyc_Misc,5
+AC_PWY-6527,stachyose degradation,AraCyc,AraCyc_Misc,8
+AC_PWY-6544,superpathway of C28 brassinosteroid biosynthesis,AraCyc,AraCyc_Misc,7
+AC_PWY-6546,brassinosteroids inactivation,AraCyc,AraCyc_Misc,11
+AC_PWY-6549,nitrogen remobilization from senescing leaves,AraCyc,AraCyc_Misc,27
+AC_PWY-6554,"1D-myo-inositol hexakisphosphate biosynthesis V (from Ins(1,3,4)P3)",AraCyc,AraCyc_Misc,12
+AC_PWY-6556,pyrimidine ribonucleosides salvage II,AraCyc,AraCyc_Nucleotide,10
+AC_PWY-6595,superpathway of guanosine nucleotides degradation (plants),AraCyc,AraCyc_Nucleotide,19
+AC_PWY-6596,adenosine nucleotides degradation I,AraCyc,AraCyc_Nucleotide,21
+AC_PWY-6599,guanine and guanosine salvage II,AraCyc,AraCyc_Misc,5
+AC_PWY-6605,adenine and adenosine salvage II,AraCyc,AraCyc_Misc,9
+AC_PWY-6606,guanosine nucleotides degradation II,AraCyc,AraCyc_Nucleotide,17
+AC_PWY-6607,guanosine nucleotides degradation I,AraCyc,AraCyc_Nucleotide,19
+AC_PWY-6612,superpathway of tetrahydrofolate biosynthesis,AraCyc,AraCyc_Cofactor,15
+AC_PWY-6613,"tetrahydrofolate salvage from 5,10-methenyltetrahydrofolate",AraCyc,AraCyc_Cofactor,5
+AC_PWY-6614,tetrahydrofolate biosynthesis I,AraCyc,AraCyc_Cofactor,9
+AC_PWY-6622,heptadecane biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-6663,plant sterol biosynthesis II,AraCyc,AraCyc_Lipid,8
+AC_PWY-6691,plaunotol biosynthesis,AraCyc,AraCyc_Misc,17
+AC_PWY-6710,poly-hydroxy fatty acids biosynthesis,AraCyc,AraCyc_Lipid,8
+AC_PWY-6717,"(1,4)-beta-D-xylan degradation",AraCyc,AraCyc_Misc,25
+AC_PWY-6724,starch degradation II,AraCyc,AraCyc_Carbohydrate,8
+AC_PWY-6733,sporopollenin precursors biosynthesis,AraCyc,AraCyc_Misc,40
+AC_PWY-6745,phytochelatins biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-6754,S-methyl-5'-thioadenosine degradation I,AraCyc,AraCyc_Misc,6
+AC_PWY-6773,"1,3-beta-D-glucan biosynthesis",AraCyc,AraCyc_Misc,14
+AC_PWY-6786,detoxification of reactive carbonyls in chloroplasts,AraCyc,AraCyc_Misc,16
+AC_PWY-6787,flavonoid biosynthesis (in equisetum),AraCyc,AraCyc_Secondary,35
+AC_PWY-6792,scopoletin biosynthesis,AraCyc,AraCyc_Misc,11
+AC_PWY-6803,phosphatidylcholine acyl editing,AraCyc,AraCyc_Misc,56
+AC_PWY-6837,"fatty acid beta-oxidation V (unsaturated, odd number, di-isomerase-dependent)",AraCyc,AraCyc_Lipid,10
+AC_PWY-6842,glutathione-mediated detoxification II,AraCyc,AraCyc_Misc,84
+AC_PWY-6908,thiamine diphosphate biosynthesis IV (eukaryotes),AraCyc,AraCyc_Cofactor,7
+AC_PWY-6922,L-Ndelta-acetylornithine biosynthesis,AraCyc,AraCyc_Misc,8
+AC_PWY-6927,chlorophyll a degradation II,AraCyc,AraCyc_Misc,13
+AC_PWY-6936,seleno-amino acid biosynthesis (plants),AraCyc,AraCyc_AminoAcid,5
+AC_PWY-695,abscisic acid biosynthesis,AraCyc,AraCyc_Misc,10
+AC_PWY-6952,glycerophosphodiester degradation,AraCyc,AraCyc_Misc,15
+AC_PWY-699,brassinolide biosynthesis I,AraCyc,AraCyc_Misc,7
+AC_PWY-702,L-methionine biosynthesis II,AraCyc,AraCyc_AminoAcid,11
+AC_PWY-7036,very long chain fatty acid biosynthesis II,AraCyc,AraCyc_Lipid,24
+AC_PWY-7039,"phosphatidate metabolism, as a signaling molecule",AraCyc,AraCyc_Misc,27
+AC_PWY-7047,malate-oxaloacetate shuttle I,AraCyc,AraCyc_Misc,9
+AC_PWY-7048,malate-oxaloacetate shuttle II,AraCyc,AraCyc_Misc,14
+AC_PWY-7101,5-deoxystrigol biosynthesis,AraCyc,AraCyc_Misc,5
+AC_PWY-7120,esterified suberin biosynthesis,AraCyc,AraCyc_Misc,5
+AC_PWY-7140,myricetin gentiobioside biosynthesis,AraCyc,AraCyc_Misc,13
+AC_PWY-7176,UTP and CTP de novo biosynthesis,AraCyc,AraCyc_Misc,12
+AC_PWY-7177,UTP and CTP dephosphorylation II,AraCyc,AraCyc_Misc,12
+AC_PWY-7184,pyrimidine deoxyribonucleotides de novo biosynthesis I,AraCyc,AraCyc_Nucleotide,6
+AC_PWY-7185,UTP and CTP dephosphorylation I,AraCyc,AraCyc_Misc,14
+AC_PWY-7193,pyrimidine ribonucleosides salvage I,AraCyc,AraCyc_Nucleotide,15
+AC_PWY-7196,superpathway of pyrimidine ribonucleosides salvage,AraCyc,AraCyc_Nucleotide,29
+AC_PWY-7199,pyrimidine deoxyribonucleosides salvage,AraCyc,AraCyc_Nucleotide,28
+AC_PWY-7200,superpathway of pyrimidine deoxyribonucleoside salvage,AraCyc,AraCyc_Nucleotide,32
+AC_PWY-7204,pyridoxal 5'-phosphate salvage II (plants),AraCyc,AraCyc_Cofactor,10
+AC_PWY-7205,CMP phosphorylation,AraCyc,AraCyc_Misc,5
+AC_PWY-7208,superpathway of pyrimidine nucleobases salvage,AraCyc,AraCyc_Nucleotide,16
+AC_PWY-7211,superpathway of pyrimidine deoxyribonucleotides de novo biosynthesis,AraCyc,AraCyc_Nucleotide,22
+AC_PWY-7219,adenosine ribonucleotides de novo biosynthesis,AraCyc,AraCyc_Nucleotide,15
+AC_PWY-7221,guanosine ribonucleotides de novo biosynthesis,AraCyc,AraCyc_Nucleotide,7
+AC_PWY-7238,sucrose biosynthesis II,AraCyc,AraCyc_Carbohydrate,30
+AC_PWY-724,"superpathway of L-lysine, L-threonine and L-methionine biosynthesis II",AraCyc,AraCyc_AminoAcid,29
+AC_PWY-7298,nevadensin biosynthesis,AraCyc,AraCyc_Misc,5
+AC_PWY-7343,UDP-alpha-D-glucose biosynthesis,AraCyc,AraCyc_Carbohydrate,10
+AC_PWY-7345,superpathway of anaerobic sucrose degradation,AraCyc,AraCyc_Carbohydrate,96
+AC_PWY-7346,UDP-alpha-D-glucuronate biosynthesis (from UDP-glucose),AraCyc,AraCyc_Carbohydrate,5
+AC_PWY-735,jasmonic acid biosynthesis,AraCyc,AraCyc_Misc,17
+AC_PWY-7356,thiamine diphosphate salvage IV (yeast),AraCyc,AraCyc_Cofactor,11
+AC_PWY-7388,"octanoyl-[acyl-carrier protein] biosynthesis (mitochondria, yeast)",AraCyc,AraCyc_Misc,13
+AC_PWY-7398,coumarins biosynthesis (engineered),AraCyc,AraCyc_Secondary,25
+AC_PWY-7417,"phospholipid remodeling (phosphatidate, yeast)",AraCyc,AraCyc_Lipid,10
+AC_PWY-7450,anthocyanidin modification (Arabidopsis),AraCyc,AraCyc_Misc,22
+AC_PWY-7546,diphthamide biosynthesis II (eukaryotes),AraCyc,AraCyc_Misc,5
+AC_PWY-7560,methylerythritol phosphate pathway II,AraCyc,AraCyc_Misc,12
+AC_PWY-7634,vernolate biosynthesis II,AraCyc,AraCyc_Misc,8
+AC_PWY-7851,coenzyme A biosynthesis II (eukaryotic),AraCyc,AraCyc_Misc,5
+AC_PWY-7859,jasmonoyl-L-isoleucine inactivation,AraCyc,AraCyc_Misc,12
+AC_PWY-7909,formaldehyde oxidation VII (THF pathway),AraCyc,AraCyc_Misc,6
+AC_PWY-7980,ATP biosynthesis,AraCyc,AraCyc_Misc,13
+AC_PWY-7995,tricin biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-801,homocysteine and cysteine interconversion,AraCyc,AraCyc_Misc,8
+AC_PWY-8011,L-serine biosynthesis II,AraCyc,AraCyc_Misc,7
+AC_PWY-8024,4-hydroxyindole-3-carbonyl nitrile biosynthesis,AraCyc,AraCyc_Misc,11
+AC_PWY-8142,"L-ascorbate biosynthesis VI (plants, myo-inositol pathway)",AraCyc,AraCyc_Misc,7
+AC_PWY-8148,NADP biosynthesis,AraCyc,AraCyc_Misc,5
+AC_PWY-8157,avenanthramide biosynthesis,AraCyc,AraCyc_Misc,26
+AC_PWY-8270,cyclic electron flow,AraCyc,AraCyc_Misc,14
+AC_PWY-8279,palmitate biosynthesis III,AraCyc,AraCyc_Misc,32
+AC_PWY-8280,stearate biosynthesis IV,AraCyc,AraCyc_Misc,32
+AC_PWY-8321,salicylate biosynthesis II,AraCyc,AraCyc_Misc,22
+AC_PWY-8363,photorespiration III,AraCyc,AraCyc_Misc,23
+AC_PWY-8395,linoleate metabolites biosynthesis,AraCyc,AraCyc_Misc,7
+AC_PWY-8398,alpha-linolenate metabolites biosynthesis,AraCyc,AraCyc_Misc,6
+AC_PWY-841,superpathway of purine nucleotides de novo biosynthesis I,AraCyc,AraCyc_Nucleotide,33
+AC_PWY-8458,methylglyoxal degradation IX,AraCyc,AraCyc_Misc,5
+AC_PWY-8475,serotonin and melatonin biosynthesis II,AraCyc,AraCyc_Misc,5
+AC_PWY-882,"L-ascorbate biosynthesis I (plants, L-galactose pathway)",AraCyc,AraCyc_Misc,6
+AC_PWY-922,mevalonate pathway I (eukaryotes and bacteria),AraCyc,AraCyc_Misc,10
+AC_PWY0-1182,trehalose degradation II (cytosolic),AraCyc,AraCyc_Misc,9
+AC_PWY0-1264,malonly-CoA biosynthesis via biotin-carboxyl carrier protein,AraCyc,AraCyc_Cofactor,10
+AC_PWY0-1319,CDP-diacylglycerol biosynthesis II,AraCyc,AraCyc_Misc,9
+AC_PWY0-1507,biotin biosynthesis from 8-amino-7-oxononanoate I,AraCyc,AraCyc_AminoAcid,6
+AC_PWY0-1608,glycine degradation,AraCyc,AraCyc_Misc,11
+AC_PWY0-162,superpathway of pyrimidine ribonucleotides de novo biosynthesis,AraCyc,AraCyc_Nucleotide,16
+AC_PWY0-166,superpathway of pyrimidine deoxyribonucleotides de novo biosynthesis (E. coli),AraCyc,AraCyc_Nucleotide,6
+AC_PWY0-461,L-lysine degradation I,AraCyc,AraCyc_AminoAcid,10
+AC_PWY0-501,lipoate biosynthesis and incorporation I,AraCyc,AraCyc_Misc,5
+AC_PWY0-662,PRPP biosynthesis,AraCyc,AraCyc_Misc,5
+AC_PWY0A-6303,methyl indole-3-acetate interconversion,AraCyc,AraCyc_Misc,13
+AC_PWY18C3-22,methylsalicylate biosynthesis,AraCyc,AraCyc_Misc,9
+AC_PWY18C3-24,methylsalicylate degradation,AraCyc,AraCyc_Misc,16
+AC_PWY1F-823,leucopelargonidin and leucocyanidin biosynthesis,AraCyc,AraCyc_Misc,14
+AC_PWY1ZNC-1,assimilatory sulfate reduction IV,AraCyc,AraCyc_Misc,7
+AC_PWY3O-4107,NAD salvage pathway V (PNC V cycle),AraCyc,AraCyc_Misc,10
+AC_PWY3O-450,phosphatidylcholine biosynthesis I,AraCyc,AraCyc_Misc,7
+AC_PWY4FS-2,phosphatidylcholine biosynthesis II,AraCyc,AraCyc_Misc,11
+AC_PWY4FS-3,phosphatidylcholine biosynthesis III,AraCyc,AraCyc_Misc,8
+AC_PWY4FS-4,phosphatidylcholine biosynthesis IV,AraCyc,AraCyc_Misc,8
+AC_PWY4FS-7,phosphatidylglycerol biosynthesis I,AraCyc,AraCyc_Misc,13
+AC_PWY4FS-8,phosphatidylglycerol biosynthesis II,AraCyc,AraCyc_Misc,32
+AC_PWY66-21,ethanol degradation II,AraCyc,AraCyc_Misc,6
+AC_PWY66-367,ketogenesis,AraCyc,AraCyc_Misc,6
+AC_PWY66-385,dTMP de novo biosynthesis (mitochondrial),AraCyc,AraCyc_Misc,12
+AC_PWY66-423,"fructose 2,6-bisphosphate biosynthesis",AraCyc,AraCyc_Misc,5
+AC_PWY66-430,tetradecanoate biosynthesis (mitochondria),AraCyc,AraCyc_Misc,19
+AC_PWYDQC-4,indole-3-acetate biosynthesis I,AraCyc,AraCyc_Misc,15
+AC_PWYQT-4429,CO2 fixation into oxaloacetate (anaplerotic),AraCyc,AraCyc_Misc,21
+AC_PWYQT-4445,pyrimidine salvage pathway,AraCyc,AraCyc_Nucleotide,12
+AC_PWYQT-4449,polyisoprenoid biosynthesis,AraCyc,AraCyc_Misc,17
+AC_PWYQT-4450,"aliphatic glucosinolate biosynthesis, side chain elongation cycle",AraCyc,AraCyc_Misc,5
+AC_PWYQT-4466,superpathway of sucrose and starch metabolism I (non-photosynthetic tissue),AraCyc,AraCyc_Carbohydrate,58
+AC_PWYQT-4471,glucosinolate biosynthesis from dihomomethionine,AraCyc,AraCyc_AminoAcid,47
+AC_PWYQT-4472,glucosinolate biosynthesis from trihomomethionine,AraCyc,AraCyc_AminoAcid,32
+AC_PWYQT-4473,glucosinolate biosynthesis from tetrahomomethionine,AraCyc,AraCyc_AminoAcid,32
+AC_PWYQT-4474,glucosinolate biosynthesis from pentahomomethionine,AraCyc,AraCyc_AminoAcid,32
+AC_PWYQT-4475,glucosinolate biosynthesis from hexahomomethionine,AraCyc,AraCyc_AminoAcid,33
+AC_PWYQT-4477,indole glucosinolate activation (intact plant cell),AraCyc,AraCyc_Misc,18
+AC_PWYQT-4481,TCA cycle variation V (plant),AraCyc,AraCyc_Misc,36
+AC_PWYQT-4482,CDP-diacylglycerol biosynthesis IV,AraCyc,AraCyc_Misc,11
+AC_PWYQT-62,superpathway of proto- and siroheme biosynthesis,AraCyc,AraCyc_Misc,21
+AC_PWYQT-94,superpathway of polyamine biosynthesis,AraCyc,AraCyc_Misc,8
+AC_PYRIDNUCSYN-PWY,NAD de novo biosynthesis I,AraCyc,AraCyc_Misc,5
+AC_PYRUVDEHYD-PWY,pyruvate decarboxylation to acetyl CoA I,AraCyc,AraCyc_Misc,16
+AC_RIBOSYN2-PWY,flavin biosynthesis I (bacteria and plants),AraCyc,AraCyc_Misc,13
+AC_SER-GLYSYN-PWY,superpathway of L-serine and glycine biosynthesis I,AraCyc,AraCyc_Misc,13
+AC_SERSYN-PWY,L-serine biosynthesis I,AraCyc,AraCyc_Misc,6
+AC_SUCSYN-PWY,sucrose biosynthesis I (from photosynthesis),AraCyc,AraCyc_Carbohydrate,40
+AC_THISYNARA-PWY,superpathway of thiamine diphosphate biosynthesis III (eukaryotes),AraCyc,AraCyc_Cofactor,9
+AC_THRESYN-PWY,superpathway of L-threonine biosynthesis,AraCyc,AraCyc_Misc,19
+AC_TRESYN-PWY,trehalose biosynthesis I,AraCyc,AraCyc_Misc,21
+AC_TRIGLSYN-PWY,diacylglycerol and triacylglycerol biosynthesis,AraCyc,AraCyc_Misc,57
+AC_TRPSYN-PWY,L-tryptophan biosynthesis,AraCyc,AraCyc_AminoAcid,21
+AC_TYRFUMCAT-PWY,L-tyrosine degradation I,AraCyc,AraCyc_Misc,10
+AC_UDPNACETYLGALSYN-PWY,UDP-N-acetyl-D-glucosamine biosynthesis II,AraCyc,AraCyc_Misc,16
+AC_VALDEG-PWY,L-valine degradation I,AraCyc,AraCyc_Misc,14
+AC_VALSYN-PWY,L-valine biosynthesis,AraCyc,AraCyc_Misc,7
+ath00010,Glycolysis / Gluconeogenesis,KEGG,KEGG_Metabolism,119
+ath00020,Citrate cycle (TCA cycle),KEGG,KEGG_Cellular,64
+ath00030,Pentose phosphate pathway,KEGG,KEGG_Cellular,58
+ath00040,Pentose and glucuronate interconversions,KEGG,KEGG_Cellular,108
+ath00051,Fructose and mannose metabolism,KEGG,KEGG_Cellular,62
+ath00052,Galactose metabolism,KEGG,KEGG_Cellular,65
+ath00053,Ascorbate and aldarate metabolism,KEGG,KEGG_Cellular,62
+ath00061,Fatty acid biosynthesis,KEGG,KEGG_Lipid,43
+ath00062,Fatty acid elongation,KEGG,KEGG_Lipid,36
+ath00071,Fatty acid degradation,KEGG,KEGG_Lipid,47
+ath00073,"Cutin, suberine and wax biosynthesis",KEGG,KEGG_Cellular,65
+ath00100,Steroid biosynthesis,KEGG,KEGG_Metabolism,36
+ath00130,Ubiquinone and other terpenoid-quinone biosynthesis,KEGG,KEGG_Metabolism,40
+ath00190,Oxidative phosphorylation,KEGG,KEGG_Metabolism,151
+ath00195,Photosynthesis,KEGG,KEGG_Metabolism,76
+ath00196,Photosynthesis,KEGG,KEGG_Metabolism,22
+ath00220,Arginine biosynthesis,KEGG,KEGG_Cellular,38
+ath00230,Purine metabolism,KEGG,KEGG_Cellular,96
+ath00240,Pyrimidine metabolism,KEGG,KEGG_Cellular,65
+ath00250,"Alanine, aspartate and glutamate metabolism",KEGG,KEGG_Cellular,51
+ath00260,"Glycine, serine and threonine metabolism",KEGG,KEGG_Cellular,70
+ath00261,Monobactam biosynthesis,KEGG,KEGG_Cellular,14
+ath00270,Cysteine and methionine metabolism,KEGG,KEGG_Cellular,125
+ath00280,"Valine, leucine and isoleucine degradation",KEGG,KEGG_Cellular,52
+ath00290,"Valine, leucine and isoleucine biosynthesis",KEGG,KEGG_Cellular,21
+ath00300,Lysine biosynthesis,KEGG,KEGG_Cellular,15
+ath00310,Lysine degradation,KEGG,KEGG_Cellular,32
+ath00330,Arginine and proline metabolism,KEGG,KEGG_Cellular,54
+ath00340,Histidine metabolism,KEGG,KEGG_Cellular,20
+ath00350,Tyrosine metabolism,KEGG,KEGG_Cellular,41
+ath00360,Phenylalanine metabolism,KEGG,KEGG_Cellular,33
+ath00380,Tryptophan metabolism,KEGG,KEGG_Cellular,64
+ath00400,"Phenylalanine, tyrosine and tryptophan biosynthesis",KEGG,KEGG_Cellular,56
+ath00410,beta-Alanine metabolism,KEGG,KEGG_Cellular,47
+ath00430,Taurine and hypotaurine metabolism,KEGG,KEGG_Cellular,11
+ath00440,Phosphonate and phosphinate metabolism,KEGG,KEGG_Cellular,5
+ath00450,Selenocompound metabolism,KEGG,KEGG_Cellular,16
+ath00460,Cyanoamino acid metabolism,KEGG,KEGG_Cellular,71
+ath00470,D-Amino acid metabolism,KEGG,KEGG_Cellular,6
+ath00480,Glutathione metabolism,KEGG,KEGG_Cellular,102
+ath00500,Starch and sucrose metabolism,KEGG,KEGG_Lipid,181
+ath00510,N-Glycan biosynthesis,KEGG,KEGG_Lipid,52
+ath00511,Other glycan degradation,KEGG,KEGG_Lipid,18
+ath00513,Various types of N-glycan biosynthesis,KEGG,KEGG_Lipid,38
+ath00514,Other types of O-glycan biosynthesis,KEGG,KEGG_Lipid,13
+ath00520,Amino sugar and nucleotide sugar metabolism,KEGG,KEGG_Lipid,124
+ath00531,Glycosaminoglycan degradation,KEGG,KEGG_Lipid,8
+ath00540,Lipopolysaccharide biosynthesis,KEGG,KEGG_Lipid,10
+ath00541,Biosynthesis of various nucleotide sugars,KEGG,KEGG_Lipid,30
+ath00543,Exopolysaccharide biosynthesis,KEGG,KEGG_Lipid,5
+ath00561,Glycerolipid metabolism,KEGG,KEGG_Lipid,71
+ath00562,Inositol phosphate metabolism,KEGG,KEGG_Lipid,83
+ath00563,Glycosylphosphatidylinositol (GPI)-anchor biosynthesis,KEGG,KEGG_Lipid,29
+ath00564,Glycerophospholipid metabolism,KEGG,KEGG_Lipid,99
+ath00565,Ether lipid metabolism,KEGG,KEGG_Lipid,26
+ath00566,Sulfoquinovose metabolism,KEGG,KEGG_Lipid,11
+ath00590,Arachidonic acid metabolism,KEGG,KEGG_Lipid,12
+ath00591,Linoleic acid metabolism,KEGG,KEGG_Lipid,9
+ath00592,alpha-Linolenic acid metabolism,KEGG,KEGG_Lipid,43
+ath00600,Sphingolipid metabolism,KEGG,KEGG_Lipid,35
+ath00601,Glycosphingolipid biosynthesis,KEGG,KEGG_Lipid,5
+ath00603,Glycosphingolipid biosynthesis,KEGG,KEGG_Lipid,11
+ath00620,Pyruvate metabolism,KEGG,KEGG_Cellular,97
+ath00630,Glyoxylate and dicarboxylate metabolism,KEGG,KEGG_Cellular,81
+ath00640,Propanoate metabolism,KEGG,KEGG_Cellular,42
+ath00650,Butanoate metabolism,KEGG,KEGG_Cellular,20
+ath00660,C5-Branched dibasic acid metabolism,KEGG,KEGG_Cellular,7
+ath00670,One carbon pool by folate,KEGG,KEGG_Metabolism,42
+ath00710,Carbon fixation by Calvin cycle,KEGG,KEGG_Metabolism,71
+ath00730,Thiamine metabolism,KEGG,KEGG_Cellular,21
+ath00740,Riboflavin metabolism,KEGG,KEGG_Cellular,20
+ath00750,Vitamin B6 metabolism,KEGG,KEGG_Cellular,15
+ath00760,Nicotinate and nicotinamide metabolism,KEGG,KEGG_Cellular,26
+ath00770,Pantothenate and CoA biosynthesis,KEGG,KEGG_Cellular,34
+ath00780,Biotin metabolism,KEGG,KEGG_Cellular,16
+ath00785,Lipoic acid metabolism,KEGG,KEGG_Cellular,36
+ath00790,Folate biosynthesis,KEGG,KEGG_Cellular,32
+ath00860,Porphyrin metabolism,KEGG,KEGG_Cellular,57
+ath00900,Terpenoid backbone biosynthesis,KEGG,KEGG_Cellular,61
+ath00901,Indole alkaloid biosynthesis,KEGG,KEGG_Cellular,5
+ath00902,Monoterpenoid biosynthesis,KEGG,KEGG_Cellular,7
+ath00904,Diterpenoid biosynthesis,KEGG,KEGG_Cellular,25
+ath00905,Brassinosteroid biosynthesis,KEGG,KEGG_Cellular,9
+ath00906,Carotenoid biosynthesis,KEGG,KEGG_Cellular,32
+ath00908,Zeatin biosynthesis,KEGG,KEGG_Cellular,32
+ath00909,Sesquiterpenoid and triterpenoid biosynthesis,KEGG,KEGG_Cellular,23
+ath00910,Nitrogen metabolism,KEGG,KEGG_Cellular,43
+ath00920,Sulfur metabolism,KEGG,KEGG_Cellular,40
+ath00940,Phenylpropanoid biosynthesis,KEGG,KEGG_Cellular,130
+ath00941,Flavonoid biosynthesis,KEGG,KEGG_Cellular,25
+ath00945,"Stilbenoid, diarylheptanoid and gingerol biosynthesis",KEGG,KEGG_Cellular,9
+ath00950,Isoquinoline alkaloid biosynthesis,KEGG,KEGG_Cellular,22
+ath00960,"Tropane, piperidine and pyridine alkaloid biosynthesis",KEGG,KEGG_Cellular,39
+ath00966,Glucosinolate biosynthesis,KEGG,KEGG_Cellular,26
+ath00970,Aminoacyl-tRNA biosynthesis,KEGG,KEGG_Cellular,691
+ath00999,Biosynthesis of various plant secondary metabolites,KEGG,KEGG_Cellular,70
+ath01040,Biosynthesis of unsaturated fatty acids,KEGG,KEGG_Lipid,25
+ath01100,Metabolic pathways,KEGG,KEGG_Cellular,2429
+ath01110,Biosynthesis of secondary metabolites,KEGG,KEGG_Cellular,1374
+ath01200,Carbon metabolism,KEGG,KEGG_Metabolism,275
+ath01210,2-Oxocarboxylic acid metabolism,KEGG,KEGG_Cellular,103
+ath01212,Fatty acid metabolism,KEGG,KEGG_Lipid,70
+ath01230,Biosynthesis of amino acids,KEGG,KEGG_Cellular,242
+ath01232,Nucleotide metabolism,KEGG,KEGG_Cellular,84
+ath01240,Biosynthesis of cofactors,KEGG,KEGG_Cellular,239
+ath01250,Biosynthesis of nucleotide sugars,KEGG,KEGG_Cellular,101
+ath01320,Sulfur cycle,KEGG,KEGG_Cellular,21
+ath02010,ABC transporters,KEGG,KEGG_Membrane,68
+ath03008,Ribosome biogenesis in eukaryotes,KEGG,KEGG_GeneticInfo,98
+ath03010,Ribosome,KEGG,KEGG_GeneticInfo,386
+ath03013,Nucleocytoplasmic transport,KEGG,KEGG_GeneticInfo,105
+ath03015,mRNA surveillance pathway,KEGG,KEGG_GeneticInfo,119
+ath03018,RNA degradation,KEGG,KEGG_GeneticInfo,114
+ath03020,RNA polymerase,KEGG,KEGG_GeneticInfo,52
+ath03022,Basal transcription factors,KEGG,KEGG_GeneticInfo,55
+ath03030,DNA replication,KEGG,KEGG_GeneticInfo,43
+ath03040,Spliceosome,KEGG,KEGG_GeneticInfo,243
+ath03050,Proteasome,KEGG,KEGG_GeneticInfo,61
+ath03060,Protein export,KEGG,KEGG_GeneticInfo,62
+ath03082,ATP-dependent chromatin remodeling,KEGG,KEGG_GeneticInfo,64
+ath03083,Polycomb repressive complex,KEGG,KEGG_GeneticInfo,69
+ath03250,Viral life cycle,KEGG,KEGG_GeneticInfo,39
+ath03272,Virion,KEGG,KEGG_GeneticInfo,12
+ath03410,Base excision repair,KEGG,KEGG_GeneticInfo,50
+ath03420,Nucleotide excision repair,KEGG,KEGG_GeneticInfo,85
+ath03430,Mismatch repair,KEGG,KEGG_GeneticInfo,32
+ath03440,Homologous recombination,KEGG,KEGG_GeneticInfo,60
+ath03450,Non-homologous end-joining,KEGG,KEGG_GeneticInfo,8
+ath03460,Fanconi anemia pathway,KEGG,KEGG_GeneticInfo,46
+ath04016,MAPK signaling pathway,KEGG,KEGG_SignalTrans,146
+ath04070,Phosphatidylinositol signaling system,KEGG,KEGG_SignalTrans,79
+ath04075,Plant hormone signal transduction,KEGG,KEGG_SignalTrans,433
+ath04081,Hormone signaling,KEGG,KEGG_SignalTrans,8
+ath04082,Neuroactive ligand signaling,KEGG,KEGG_SignalTrans,9
+ath04120,Ubiquitin mediated proteolysis,KEGG,KEGG_SignalTrans,163
+ath04122,Sulfur relay system,KEGG,KEGG_SignalTrans,13
+ath04130,SNARE interactions in vesicular transport,KEGG,KEGG_SignalTrans,55
+ath04136,Autophagy,KEGG,KEGG_SignalTrans,41
+ath04141,Protein processing in endoplasmic reticulum,KEGG,KEGG_SignalTrans,223
+ath04142,Lysosome biogenesis,KEGG,KEGG_SignalTrans,193
+ath04144,Endocytosis,KEGG,KEGG_SignalTrans,156
+ath04145,Phagosome,KEGG,KEGG_SignalTrans,87
+ath04146,Peroxisome,KEGG,KEGG_SignalTrans,90
+ath04148,Efferocytosis,KEGG,KEGG_SignalTrans,53
+ath04382,Cornified envelope formation,KEGG,KEGG_SignalTrans,35
+ath04517,IgSF CAM signaling,KEGG,KEGG_SignalTrans,50
+ath04518,Integrin signaling,KEGG,KEGG_SignalTrans,14
+ath04519,Cadherin signaling,KEGG,KEGG_SignalTrans,65
+ath04620,Toll-like receptor signaling pathway,KEGG,KEGG_SignalTrans,15
+ath04626,Plant-pathogen interaction,KEGG,KEGG_SignalTrans,216
+ath04712,Circadian rhythm,KEGG,KEGG_SignalTrans,43
+ath04814,Motor proteins,KEGG,KEGG_SignalTrans,82
+ath04820,Cytoskeleton in muscle cells,KEGG,KEGG_SignalTrans,8
+ath04981,Folate transport and metabolism,KEGG,KEGG_SignalTrans,40
+ath05100,Bacterial invasion of epithelial cells,KEGG,KEGG_Environmental,26

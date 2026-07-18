@@ -1,0 +1,35 @@
+{
+  "source_script": "make_metric_figures.py",
+  "model": "XGBoost (reference)",
+  "seed": 42,
+  "ratio": "1:5",
+  "feature_selection_scope": "outer_train_only",
+  "negative_source_isolation": true,
+  "selected_go_sha256": "6e9ae3f7be813781f7df75691cd6734c9df1ef330579a007a3c50dc8af922949",
+  "n_test": 648,
+  "reproduced": {
+    "test_auroc": 0.873543,
+    "test_auprc": 0.536607,
+    "f1_at_0.5": 0.553506
+  },
+  "cross_checked_against": "code/ratio_runs/ratio_1_5/tables/table_main_benchmark.csv",
+  "confusion_at_0.5": {
+    "TP": 75,
+    "FP": 88,
+    "FN": 33,
+    "TN": 452
+  },
+  "score_medians_by_type": {
+    "Curated pathway": 0.6983,
+    "Random": 0.0015,
+    "Shuffled": 0.0026,
+    "Partial pathway": 0.3511,
+    "Cross-pathway mixture": 0.2462
+  },
+  "figures": [
+    "FigC_roc_pr.png",
+    "FigF_confusion.png",
+    "FigG_score_by_type.png"
+  ],
+  "output_scope": "scientific_generated_figures_only"
+}

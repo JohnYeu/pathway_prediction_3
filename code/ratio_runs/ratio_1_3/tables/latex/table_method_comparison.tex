@@ -1,0 +1,25 @@
+\begin{table}[htbp]
+\centering
+\caption{Systematic comparison of machine-learning methods. Wall-clock times use the environment recorded in compute_environment.csv.}
+\label{tab:method_comparison_recomputed}
+\begin{tabular}{rllrrrrr}
+\toprule
+Rank & Method & Protocol & Test AUROC & AUPRC & F1 & Brier & Time (s) \\
+\midrule
+1 & CatBoost & heldout\_only & 0.863 & 0.624 & 0.645 & 0.150 & 0.552 \\
+2 & Gradient Boosting & heldout\_only & 0.862 & 0.629 & 0.600 & 0.133 & 1.681 \\
+3 & XGBoost & heldout\_only & 0.861 & 0.647 & 0.623 & 0.150 & 0.863 \\
+4 & LightGBM & heldout\_only & 0.860 & 0.640 & 0.648 & 0.149 & 1.443 \\
+5 & Random Forest & heldout\_only & 0.850 & 0.582 & 0.640 & 0.144 & 0.434 \\
+6 & AdaBoost & heldout\_only & 0.840 & 0.548 & 0.532 & 0.192 & 0.475 \\
+7 & Extra Trees & heldout\_only & 0.831 & 0.561 & 0.588 & 0.171 & 0.309 \\
+8 & RBF SVM & heldout\_only & 0.818 & 0.569 & 0.475 & 0.144 & 0.298 \\
+9 & Logistic Regression & heldout\_only & 0.814 & 0.545 & 0.589 & 0.184 & 0.009 \\
+10 & Linear SVM & heldout\_only & 0.813 & 0.566 & 0.395 & 0.146 & 0.483 \\
+11 & MLP & heldout\_only & 0.780 & 0.540 & 0.458 & 0.159 & 0.034 \\
+12 & k-NN (k=7) & heldout\_only & 0.761 & 0.486 & 0.485 & 0.162 & 0.034 \\
+13 & Gaussian Naive Bayes & heldout\_only & 0.731 & 0.411 & 0.491 & 0.420 & 0.001 \\
+\bottomrule
+\end{tabular}
+
+\end{table}

@@ -1,0 +1,6 @@
+{
+  "excluded_pathways": 6,
+  "kept_pathways": 155,
+  "raw_distinct_pathways_with_gene_links": 161,
+  "rule": "keep pathways with at least 5 distinct normalized linked genes"
+}

@@ -24,13 +24,17 @@ class ReproduciblePipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.bundle = pipeline.load_raw_bundle(pipeline.DEFAULT_RAW_DIR)
-        cls.context = pipeline.prepare_primary_context(cls.bundle, ratio=2)
+        cls.context = pipeline.prepare_primary_context(
+            cls.bundle,
+            ratio=pipeline.DEFAULT_PRIMARY_RATIO,
+        )
 
     def test_primary_split_and_source_isolation(self) -> None:
         self.assertEqual(len(self.context.train_positive_records), 430)
         self.assertEqual(len(self.context.test_positive_records), 108)
-        self.assertEqual(len(self.context.train_records), 1290)
-        self.assertEqual(len(self.context.test_records), 324)
+        self.assertEqual(self.context.ratio, 1)
+        self.assertEqual(len(self.context.train_records), 860)
+        self.assertEqual(len(self.context.test_records), 216)
         pipeline.assert_source_isolation(
             self.context.train_positive_records,
             self.context.test_positive_records,
@@ -42,6 +46,29 @@ class ReproduciblePipelineTests(unittest.TestCase):
         self.assertEqual(len(self.context.selected_go), pipeline.N_GO_TERMS)
         self.assertEqual(len(self.context.feature_names), pipeline.N_GO_TERMS + 9)
         self.assertEqual(self.context.feature_selection_stages["mi_select"], pipeline.N_GO_TERMS)
+
+    def test_one_to_two_branch_has_independent_records(self) -> None:
+        # Build the comparison branch from a fresh bundle because selecting GO
+        # terms updates the bundle's active feature representation in place.
+        bundle = pipeline.load_raw_bundle(pipeline.DEFAULT_RAW_DIR)
+        context = pipeline.prepare_primary_context(bundle, ratio=2)
+        self.assertEqual(context.ratio, 2)
+        self.assertEqual(len(context.train_positive_records), 430)
+        self.assertEqual(len(context.test_positive_records), 108)
+        self.assertEqual(len(context.train_records), 1290)
+        self.assertEqual(len(context.test_records), 324)
+        self.assertEqual(int((context.y_train == 0).sum()), 860)
+        self.assertEqual(int((context.y_test == 0).sum()), 216)
+        self.assertEqual(
+            pipeline.scale_pos_weight_from_labels(context.y_train, "test_ratio_1_2"),
+            2.0,
+        )
+        pipeline.assert_source_isolation(
+            context.train_positive_records,
+            context.test_positive_records,
+            context.train_records,
+            context.test_records,
+        )
 
     def test_entropy_zero_boundary_and_nonzero_compatibility(self) -> None:
         # An annotated gene with none of the selected terms exercises the new

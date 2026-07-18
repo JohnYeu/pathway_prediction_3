@@ -1,0 +1,52 @@
+{
+  "analysis": "independently_trained_primary_ratio_comparison",
+  "branch_inputs": [
+    {
+      "branch": "ratio_runs/ratio_1_1",
+      "main_benchmark_sha256": "68b3e6e2129d87c0fd26c712b48d3f76b38083cf46d3c56e830ecf351309edaf",
+      "ratio": "1:1",
+      "selected_go_sha256": "c1c231d23638b2d3c06a9c1bf4b432d481ccc15c26563f04a62211cd160d8084"
+    },
+    {
+      "branch": "ratio_runs/ratio_1_2",
+      "main_benchmark_sha256": "67aafeeb0f54687b5dbe0bb18d6f5a905b64867c817369f4171b4f5d6cdc1748",
+      "ratio": "1:2",
+      "selected_go_sha256": "060f8d9fea5a6251bd0bf091b6572140bbdd2d0752b40d78f92377b21ab0d40e"
+    },
+    {
+      "branch": "ratio_runs/ratio_1_3",
+      "main_benchmark_sha256": "6f1b6d074ae1f457cae05aa1e1d69f98fc7958f038200ee3eb9276e2db9f9304",
+      "ratio": "1:3",
+      "selected_go_sha256": "1af1dc817ae40c26ff05db3c566371dd6d715ffcf3fdaa76b00db36b16972442"
+    },
+    {
+      "branch": "ratio_runs/ratio_1_4",
+      "main_benchmark_sha256": "1d8efb86418654ee6e89a8252b6a6d2edb95a04e5769546bf663e67e75f31483",
+      "ratio": "1:4",
+      "selected_go_sha256": "1c93916ce8f6f759bb12ba843922d31b6308e2ef6722a75508f0df733371c0eb"
+    },
+    {
+      "branch": "ratio_runs/ratio_1_5",
+      "main_benchmark_sha256": "fbd85260672411c4a222c389a9ba87954723e38fc37ca19dee0575dbfaa0bc9a",
+      "ratio": "1:5",
+      "selected_go_sha256": "784264bf138400e33d44946f331491e0428c660af7629c411f081edfcbf7bd6d"
+    }
+  ],
+  "created_at_utc": "2026-07-16T15:51:45.998090+00:00",
+  "feature_selection": "60 GO terms selected independently from each branch's training records",
+  "normalized_auprc_formula": "(AUPRC - positive_prevalence) / (1 - positive_prevalence)",
+  "output_figure": "primary_ratio_performance_comparison.png",
+  "output_table": "primary_ratio_performance_comparison.csv",
+  "published": {
+    "figure": "figures/Fig7_robustness.png",
+    "result_directory": "generated",
+    "table": "tables/primary_ratio_performance_comparison.csv"
+  },
+  "ratios": [
+    "1:1",
+    "1:2",
+    "1:3",
+    "1:4",
+    "1:5"
+  ]
+}

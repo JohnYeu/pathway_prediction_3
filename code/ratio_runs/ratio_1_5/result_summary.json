@@ -1,0 +1,44 @@
+{
+  "dataset_source": "raw",
+  "n_aracyc": 383,
+  "n_features": 69,
+  "n_go_annotated_genes": 28998,
+  "n_go_annotated_pathway_genes": 7184,
+  "n_kegg": 155,
+  "n_pathway_member_genes": 7333,
+  "n_pathways": 538,
+  "n_selected_go": 60,
+  "n_test_positive": 108,
+  "n_test_total": 648,
+  "n_train_positive": 430,
+  "n_train_total": 2580,
+  "pathway_gene_go_coverage": 0.9796808945861175,
+  "positive_fraction_test": 0.16666666666666666,
+  "positive_fraction_train": 0.16666666666666666,
+  "primary_ratio": "1:5",
+  "primary_split_sha256": "a17657829d650c8f7a296a0c879ecf69fdc1e6b38aa0f0a49342ee3826c9fc55",
+  "scale_pos_weight_summary": {
+    "max": 5.0,
+    "mean": 3.5454545454545454,
+    "min": 1.0,
+    "n_records": 110,
+    "rule": "dynamic_n_negative_train_over_n_positive_train"
+  },
+  "sections_run": [
+    "main",
+    "ratio",
+    "models",
+    "ablation",
+    "lofo",
+    "importance"
+  ],
+  "selected_go_sha256": "6e9ae3f7be813781f7df75691cd6734c9df1ef330579a007a3c50dc8af922949",
+  "table_row_counts": {
+    "ablation.csv": 7,
+    "feature_importance.csv": 30,
+    "lofo.csv": 12,
+    "main_benchmark.csv": 3,
+    "model_comparison.csv": 13,
+    "ratio_sensitivity.csv": 5
+  }
+}

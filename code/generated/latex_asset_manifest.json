@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-07-10T00:58:50",
-  "backup_dir": "generated/latex_asset_backup_20260710_005850",
+  "generated_at": "2026-07-16T08:50:46",
+  "backup_dir": "generated/latex_asset_backup_20260716_085046",
   "target_dirs": [
     "latex/figures"
   ],
@@ -9,112 +9,112 @@
       "source": "generated/figures/Fig1_pipeline.png",
       "target_name": "Fig1_pipeline.png",
       "copied_to": [
-        "latex/figures/Fig1_pipeline.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig1_pipeline.png"
       ]
     },
     {
       "source": "generated/figures/Fig1_pipeline.png",
       "target_name": "Fig1_v3_subway.png",
       "copied_to": [
-        "latex/figures/Fig1_v3_subway.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig1_v3_subway.png"
       ]
     },
     {
       "source": "generated/figures/Fig2_performance.png",
       "target_name": "Fig2_performance.png",
       "copied_to": [
-        "latex/figures/Fig2_performance.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig2_performance.png"
       ]
     },
     {
       "source": "generated/figures/FigA_ranked_bars.png",
       "target_name": "FigA_ranked_bars.png",
       "copied_to": [
-        "latex/figures/FigA_ranked_bars.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/FigA_ranked_bars.png"
       ]
     },
     {
       "source": "generated/figures/FigB_heatmap.png",
       "target_name": "FigB_heatmap.png",
       "copied_to": [
-        "latex/figures/FigB_heatmap.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/FigB_heatmap.png"
       ]
     },
     {
       "source": "generated/figures/FigD_heldout_time.png",
       "target_name": "FigD_heldout_time.png",
       "copied_to": [
-        "latex/figures/FigD_heldout_time.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/FigD_heldout_time.png"
       ]
     },
     {
       "source": "generated/figures/Fig_heldout_AUROC_13methods.png",
       "target_name": "Fig_heldout_AUROC_13methods.png",
       "copied_to": [
-        "latex/figures/Fig_heldout_AUROC_13methods.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig_heldout_AUROC_13methods.png"
       ]
     },
     {
       "source": "generated/figures/FigC_roc_pr.png",
       "target_name": "FigC_roc_pr.png",
       "copied_to": [
-        "latex/figures/FigC_roc_pr.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/FigC_roc_pr.png"
       ]
     },
     {
       "source": "generated/figures/FigF_confusion.png",
       "target_name": "FigF_confusion.png",
       "copied_to": [
-        "latex/figures/FigF_confusion.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/FigF_confusion.png"
       ]
     },
     {
       "source": "generated/figures/FigG_score_by_type.png",
       "target_name": "FigG_score_by_type.png",
       "copied_to": [
-        "latex/figures/FigG_score_by_type.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/FigG_score_by_type.png"
       ]
     },
     {
       "source": "generated/figures/Fig3_shap.png",
       "target_name": "Fig3_shap.png",
       "copied_to": [
-        "latex/figures/Fig3_shap.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig3_shap.png"
       ]
     },
     {
       "source": "generated/figures/Fig5_datastats.png",
       "target_name": "Fig5_datastats.png",
       "copied_to": [
-        "latex/figures/Fig5_datastats.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig5_datastats.png"
       ]
     },
     {
       "source": "generated/figures/Fig6_lofo.png",
       "target_name": "Fig6_lofo.png",
       "copied_to": [
-        "latex/figures/Fig6_lofo.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig6_lofo.png"
       ]
     },
     {
       "source": "generated/figures/Fig7_robustness.png",
       "target_name": "Fig7_robustness.png",
       "copied_to": [
-        "latex/figures/Fig7_robustness.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig7_robustness.png"
       ]
     },
     {
       "source": "generated/figures/Fig8_methods.png",
       "target_name": "Fig8_methods.png",
       "copied_to": [
-        "latex/figures/Fig8_methods.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig8_methods.png"
       ]
     },
     {
       "source": "generated/figures/Fig_ablation.png",
       "target_name": "Fig_ablation.png",
       "copied_to": [
-        "latex/figures/Fig_ablation.png"
+        "/Users/yuzhuoye/PathwayML-Ath_files3/latex/figures/Fig_ablation.png"
       ]
     }
   ]

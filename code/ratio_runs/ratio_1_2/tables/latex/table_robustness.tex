@@ -1,0 +1,17 @@
+\begin{table}[htbp]
+\centering
+\caption{Negative-sampling ratio sensitivity.}
+\label{tab:robustness_recomputed}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Ratio & \$n\_+\$ & \$n\_-\$ & CV AUROC & Test AUROC & AUPRC & F1 & Precision & Recall \\
+\midrule
+1:1 & 538 & 538 & 0.864 & 0.827 & 0.788 & 0.763 & 0.725 & 0.806 \\
+1:2 & 538 & 1076 & 0.871 & 0.854 & 0.682 & 0.712 & 0.656 & 0.778 \\
+1:3 & 538 & 1614 & 0.878 & 0.859 & 0.634 & 0.651 & 0.569 & 0.759 \\
+1:4 & 538 & 2152 & 0.875 & 0.864 & 0.572 & 0.580 & 0.494 & 0.704 \\
+1:5 & 538 & 2690 & 0.876 & 0.874 & 0.535 & 0.561 & 0.474 & 0.685 \\
+\bottomrule
+\end{tabular}
+
+\end{table}

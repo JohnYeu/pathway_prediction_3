@@ -1,0 +1,7 @@
+{
+  "coverage_fraction": 0.979681,
+  "coverage_percent": 97.97,
+  "definition": "fraction of curated-pathway genes with at least one GO annotation",
+  "go_annotated_pathway_genes": 7184,
+  "pathway_member_genes": 7333
+}

@@ -1,0 +1,15 @@
+field,value
+system,Darwin
+machine,arm64
+logical_cpu_count,12
+platform,macOS-26.4.1-arm64-arm-64bit-Mach-O
+model_name,MacBook Pro
+model_identifier,"Mac14,10"
+chip,Apple M2 Pro
+core_layout,proc 12:8:4:0
+memory,16 GB
+cpu_cores_total,12
+cpu_performance_cores,8
+cpu_efficiency_cores,4
+os_version,26.4.1
+os_build,25E253

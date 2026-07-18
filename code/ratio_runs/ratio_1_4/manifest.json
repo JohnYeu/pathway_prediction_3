@@ -1,0 +1,267 @@
+{
+  "args": {
+    "dataset_source": "raw",
+    "full": true,
+    "out_dir": "code/ratio_runs/ratio_1_4",
+    "primary_ratio": 4,
+    "quick": false,
+    "raw_dir": "code/raw_sources",
+    "sections": [
+      "all"
+    ]
+  },
+  "comparison_run": true,
+  "cv_scheme_audit_table": "tables/cv_scheme_audit.csv",
+  "dataset_mode": "raw_full",
+  "dataset_source": "raw",
+  "feature_selection_scope": "outer_train_only",
+  "formal_full_run": true,
+  "git_commit": "164ee8d663b35a468a29e5507e787221990417b1",
+  "go_selection_mode": "primary_train_fixed60",
+  "hardware_profile": {
+    "chip": "Apple M2 Pro",
+    "core_layout": "proc 12:8:4:0",
+    "cpu_cores_total": 12,
+    "cpu_efficiency_cores": 4,
+    "cpu_performance_cores": 8,
+    "logical_cpu_count": 12,
+    "machine": "arm64",
+    "memory": "16 GB",
+    "model_identifier": "Mac14,10",
+    "model_name": "MacBook Pro",
+    "os_build": "25E253",
+    "os_version": "26.4.1",
+    "platform": "macOS-26.4.1-arm64-arm-64bit-Mach-O",
+    "system": "Darwin"
+  },
+  "hyperparameter_audit_table": "tables/hyperparameter_audit.csv",
+  "lofo_nested_feature_selection": false,
+  "model_comparison_protocol": "heldout_only",
+  "model_hyperparameters": {
+    "CatBoost": {
+      "available": true,
+      "parameters": {
+        "allow_writing_files": false,
+        "depth": 5,
+        "iterations": 500,
+        "learning_rate": 0.03,
+        "random_seed": 42,
+        "scale_pos_weight_rule": "dynamic_n_negative_train_over_n_positive_train",
+        "thread_count": -1
+      }
+    },
+    "LightGBM": {
+      "available": true,
+      "parameters": {
+        "colsample_bytree": 0.7,
+        "learning_rate": 0.03,
+        "max_depth": 5,
+        "n_estimators": 500,
+        "n_jobs": -1,
+        "num_leaves": 63,
+        "random_state": 42,
+        "scale_pos_weight_rule": "dynamic_n_negative_train_over_n_positive_train",
+        "subsample": 0.8
+      }
+    },
+    "Logistic Regression": {
+      "class_weight": "balanced",
+      "max_iter": 5000,
+      "random_state": 42,
+      "solver": "lbfgs"
+    },
+    "Random Forest": {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "n_estimators": 500,
+      "n_jobs": -1,
+      "random_state": 42
+    },
+    "XGBoost": {
+      "colsample_bytree": 0.7,
+      "eval_metric": "logloss",
+      "learning_rate": 0.03,
+      "max_depth": 5,
+      "min_child_weight": 3,
+      "n_estimators": 500,
+      "n_jobs": -1,
+      "objective": "binary:logistic",
+      "random_state": 42,
+      "reg_alpha": 0.1,
+      "reg_lambda": 1.0,
+      "scale_pos_weight_rule": "dynamic_n_negative_train_over_n_positive_train",
+      "subsample": 0.8,
+      "tree_method": "hist"
+    }
+  },
+  "negative_scheme": "four_type_random_shuffled_partial_cross",
+  "negative_source_isolation": true,
+  "notes": [
+    "Raw mode rebuilds the dataset from the documented TAIR, KEGG, and PMN/AraCyc inputs.",
+    "The 60 GO terms are selected only from the primary outer-training records.",
+    "Source-derived negative controls are generated independently on each split side.",
+    "LOFO uses the fixed primary training-selected representation and is not nested feature selection.",
+    "The supplementary 13-model comparison uses the common held-out split."
+  ],
+  "output_dir": "code/ratio_runs/ratio_1_4",
+  "paper_output_map": {
+    "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
+    "cv_split_audit": "tables/cv_split_audit.csv and data/cv_fold_manifest.json",
+    "dataset_statistics": "figures/Fig5_datastats.png and tables/dataset_summary.csv",
+    "feature_importance": "tables/table_top_features.csv and figures/Fig3_shap.png",
+    "go_selection_audit": "tables/go_selection_audit.csv",
+    "kegg_pathway_filter": "tables/kegg_pathway_filter_audit.csv and tables/kegg_pathway_filter_summary.json",
+    "latex_fragments": "tables/latex/*.tex",
+    "lofo": "tables/table_lofo.csv and figures/Fig6_lofo.png",
+    "method_comparison": "tables/table_method_comparison.csv and figures/Fig8_methods.png",
+    "negative_metadata": "tables/negative_metadata.csv",
+    "negative_ratio": "tables/table_robustness.csv and figures/Fig7_robustness.png",
+    "primary_split_audit": "tables/main_split_audit.csv and data/main_split.json"
+  },
+  "paper_result": false,
+  "primary_ratio": "1:4",
+  "primary_split_sha256": "73660164d23502d55079e3e959e820f586693e5d766a1ffe73ae3e9763ad94c0",
+  "primary_split_stratification": "database_source",
+  "primary_split_unit": "pathway",
+  "quick": false,
+  "raw_source_checksums": [
+    {
+      "expected_sha256": "c46ada08ea3d9d7cb35f6e175fc148b1c6cbd464883f2343c5c11c5981f77177",
+      "file": "ATH_GO_GOSLIM.txt",
+      "matches_sha256sums": true,
+      "path": "code/raw_sources/ATH_GO_GOSLIM.txt",
+      "sha256": "c46ada08ea3d9d7cb35f6e175fc148b1c6cbd464883f2343c5c11c5981f77177",
+      "size_bytes": 68497182
+    },
+    {
+      "expected_sha256": "8e612ff73be6a70cfdb740cd11abc71cd6ee855e9bf6d0c8f957454d620a29f5",
+      "file": "aracyc_pathways.20251021",
+      "matches_sha256sums": true,
+      "path": "code/raw_sources/aracyc_pathways.20251021",
+      "sha256": "8e612ff73be6a70cfdb740cd11abc71cd6ee855e9bf6d0c8f957454d620a29f5",
+      "size_bytes": 1317875
+    },
+    {
+      "expected_sha256": "5bc2e6d7244b908fb1c8c567beb465e4b49c9af576ed00121fe190e0e142362d",
+      "file": "kegg_pathway_genes.txt",
+      "matches_sha256sums": true,
+      "path": "code/raw_sources/kegg_pathway_genes.txt",
+      "sha256": "5bc2e6d7244b908fb1c8c567beb465e4b49c9af576ed00121fe190e0e142362d",
+      "size_bytes": 398854
+    },
+    {
+      "expected_sha256": "daca22c2577cc9f4039aaee000c60a1bf2f4f8145a1b4b3e382e799160908509",
+      "file": "kegg_pathway_names.txt",
+      "matches_sha256sums": true,
+      "path": "code/raw_sources/kegg_pathway_names.txt",
+      "sha256": "daca22c2577cc9f4039aaee000c60a1bf2f4f8145a1b4b3e382e799160908509",
+      "size_bytes": 11972
+    },
+    {
+      "expected_sha256": "",
+      "file": "sha256sums.txt",
+      "matches_sha256sums": "",
+      "path": "code/raw_sources/sha256sums.txt",
+      "sha256": "0bf29032cdedb8123b7e299d48b3e4041a542c25a5ceae3e64d2badb90eb53ec",
+      "size_bytes": 353
+    },
+    {
+      "expected_sha256": "",
+      "file": "source_manifest.csv",
+      "matches_sha256sums": "",
+      "path": "code/raw_sources/source_manifest.csv",
+      "sha256": "eb051fe44a7c3ed3ba82e386fcb6f7a62438f6929dbf2a3b782a7b120e3fdf87",
+      "size_bytes": 1506
+    }
+  ],
+  "result_summary": {
+    "dataset_source": "raw",
+    "n_aracyc": 383,
+    "n_features": 69,
+    "n_go_annotated_genes": 28998,
+    "n_go_annotated_pathway_genes": 7184,
+    "n_kegg": 155,
+    "n_pathway_member_genes": 7333,
+    "n_pathways": 538,
+    "n_selected_go": 60,
+    "n_test_positive": 108,
+    "n_test_total": 540,
+    "n_train_positive": 430,
+    "n_train_total": 2150,
+    "pathway_gene_go_coverage": 0.9796808945861175,
+    "positive_fraction_test": 0.2,
+    "positive_fraction_train": 0.2,
+    "primary_ratio": "1:4",
+    "primary_split_sha256": "73660164d23502d55079e3e959e820f586693e5d766a1ffe73ae3e9763ad94c0",
+    "scale_pos_weight_summary": {
+      "max": 5.0,
+      "mean": 3.272727272727273,
+      "min": 1.0,
+      "n_records": 110,
+      "rule": "dynamic_n_negative_train_over_n_positive_train"
+    },
+    "sections_run": [
+      "main",
+      "ratio",
+      "models",
+      "ablation",
+      "lofo",
+      "importance"
+    ],
+    "selected_go_sha256": "0d191605db14d0fdc244e5bd720c63012ac47472dcde9ac64e90006c79627cd3",
+    "table_row_counts": {
+      "ablation.csv": 7,
+      "feature_importance.csv": 30,
+      "lofo.csv": 12,
+      "main_benchmark.csv": 3,
+      "model_comparison.csv": 13,
+      "ratio_sensitivity.csv": 5
+    }
+  },
+  "run_mode": "full",
+  "scale_pos_weight_audit_table": "tables/scale_pos_weight_audit.csv",
+  "scale_pos_weight_rule": "dynamic_n_negative_train_over_n_positive_train",
+  "scale_pos_weight_summary": {
+    "max": 5.0,
+    "mean": 3.272727272727273,
+    "min": 1.0,
+    "n_records": 110,
+    "rule": "dynamic_n_negative_train_over_n_positive_train"
+  },
+  "sections_run": [
+    "main",
+    "ratio",
+    "models",
+    "ablation",
+    "lofo",
+    "importance"
+  ],
+  "selected_go_sha256": "0d191605db14d0fdc244e5bd720c63012ac47472dcde9ac64e90006c79627cd3",
+  "software_versions": {
+    "catboost": "1.2.10",
+    "lightgbm": "4.6.0",
+    "matplotlib": "3.10.0",
+    "numpy": "2.2.3",
+    "pandas": "2.2.3",
+    "platform": "macOS-26.4.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.2 (v3.13.2:4f8bb3947cf, Feb  4 2025, 11:51:10) [Clang 15.0.0 (clang-1500.3.9.4)]",
+    "scipy": "1.17.1",
+    "shap": "0.51.0",
+    "sklearn": "1.8.0",
+    "xgboost": "3.2.0"
+  },
+  "split_seeds": {
+    "cv_repeat_seeds": [
+      42,
+      7,
+      13
+    ],
+    "primary": 42,
+    "test_negatives": 242,
+    "train_negatives": 142
+  },
+  "timestamp_utc": "2026-07-16T15:04:32.319452+00:00",
+  "working_tree_dirty": true,
+  "working_tree_dirty_scope": "source tree excluding code/generated* and the active output directory"
+}

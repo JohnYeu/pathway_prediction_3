@@ -22,7 +22,8 @@ The pipeline:
    (random[5,30], shuffled, partial, cross-pathway);
 5. runs the main benchmark, ratio sensitivity, model comparison, ablation,
    leave-one-family-out, and SHAP/importance summary;
-6. saves machine-readable tables, figures, and provenance under generated/.
+6. saves machine-readable tables, figures, and provenance under an isolated
+   result directory.
 
 Raw mode is the default.  A cached mode is retained only for comparison with an
 archived JSON data snapshot; it should not be used as the paper data source.
@@ -119,6 +120,10 @@ FIG_DIR = OUT_DIR / "figures"
 DATA_DIR = OUT_DIR / "data"
 
 SEED = 42
+# The formal manuscript configuration uses one constructed control per curated
+# pathway.  Other ratios remain available as isolated sensitivity branches.
+DEFAULT_PRIMARY_RATIO = 1
+SUPPORTED_PRIMARY_RATIOS = (1, 2, 3, 4, 5)
 N_GO_TERMS = 60
 MIN_PATHWAY_GENES = 5
 PRIMARY_TEST_SIZE = 0.20
@@ -213,6 +218,7 @@ class PrimaryContext:
     y_train: np.ndarray
     X_test: np.ndarray
     y_test: np.ndarray
+    ratio: int
     split_seed: int = SEED
     train_negative_seed: int = PRIMARY_TRAIN_NEGATIVE_SEED
     test_negative_seed: int = PRIMARY_TEST_NEGATIVE_SEED
@@ -306,10 +312,9 @@ def scale_pos_weight_from_labels(
     """Compute and audit the XGBoost/boosting positive-class weight.
 
     XGBoost defines ``scale_pos_weight`` as negative examples divided by
-    positive examples.  The paper uses 1:2 positives:negatives for the primary
-    benchmark, but LOFO folds and ratio-sensitivity runs can differ slightly
-    after splitting.  Computing the value from the actual training labels keeps
-    every analysis honest and reproducible.
+    positive examples. Computing the value from the actual training labels
+    keeps the 1:1 and 1:2 branches, LOFO folds, and ratio-sensitivity runs
+    consistent with the data they actually use.
     """
     y_arr = np.asarray(y_train)
     n_pos = int((y_arr == 1).sum())
@@ -407,7 +412,12 @@ def git_working_tree_dirty() -> bool | None:
             stderr=subprocess.DEVNULL,
         )
         changed_paths = [line[3:].strip() for line in output.splitlines() if len(line) >= 4]
-        source_changes = [path for path in changed_paths if not path.startswith("code/generated")]
+        output_prefix = project_relative_path(OUT_DIR).rstrip("/") + "/"
+        source_changes = [
+            path
+            for path in changed_paths
+            if not path.startswith("code/generated") and not path.startswith(output_prefix)
+        ]
         return bool(source_changes)
     except Exception:
         return None
@@ -462,6 +472,73 @@ def software_versions() -> Dict[str, str]:
     if shap is not None:
         versions["shap"] = shap.__version__
     return versions
+
+
+def hardware_profile() -> Dict[str, Any]:
+    """Collect a privacy-safe description of the computer used for a run.
+
+    Runtime values are only interpretable together with the machine on which
+    they were measured. On macOS, ``system_profiler`` provides the model, chip,
+    core layout, and memory. Device identifiers such as the serial number,
+    hardware UUID, and user name are deliberately not collected.
+    """
+    profile: Dict[str, Any] = {
+        "system": platform.system(),
+        "machine": platform.machine(),
+        "logical_cpu_count": os.cpu_count(),
+        "platform": platform.platform(),
+    }
+    if platform.system() == "Darwin":
+        try:
+            raw = subprocess.check_output(
+                ["system_profiler", "SPHardwareDataType", "-json"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            overview = json.loads(raw).get("SPHardwareDataType", [{}])[0]
+            core_layout = overview.get("number_processors")
+            profile.update(
+                {
+                    "model_name": overview.get("machine_name"),
+                    "model_identifier": overview.get("machine_model"),
+                    "chip": overview.get("chip_type"),
+                    "core_layout": core_layout,
+                    "memory": overview.get("physical_memory"),
+                }
+            )
+            # Apple Silicon reports strings such as ``proc 12:8:4:0``.  Keep
+            # the original value and expose the three useful counts so the
+            # runtime table does not depend on undocumented display syntax.
+            match = re.fullmatch(r"proc\s+(\d+):(\d+):(\d+):\d+", str(core_layout))
+            if match:
+                profile.update(
+                    {
+                        "cpu_cores_total": int(match.group(1)),
+                        "cpu_performance_cores": int(match.group(2)),
+                        "cpu_efficiency_cores": int(match.group(3)),
+                    }
+                )
+        except Exception:
+            pass
+        try:
+            profile["os_version"] = subprocess.check_output(
+                ["sw_vers", "-productVersion"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            profile["os_build"] = subprocess.check_output(
+                ["sw_vers", "-buildVersion"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except Exception:
+            pass
+    return {key: value for key, value in profile.items() if value not in (None, "")}
+
+
+def save_compute_environment(profile: Mapping[str, Any]) -> None:
+    """Save hardware metadata in JSON and a human-readable two-column table."""
+    save_json(OUT_DIR / "hardware_profile.json", dict(profile))
+    save_table(
+        TABLE_DIR / "compute_environment.csv",
+        [{"field": key, "value": value} for key, value in profile.items()],
+    )
 
 
 def scale_pos_weight_audit_rows() -> List[Dict[str, Any]]:
@@ -754,6 +831,41 @@ def build_raw_pathways(raw_dir: Path) -> Tuple[Dict[str, Dict[str, Any]], Dict[s
         "raw_aracyc_stats": aracyc_stats,
     }
     return pathways, stats
+
+
+def save_kegg_filter_audit(raw_dir: Path) -> None:
+    """Record how the raw KEGG snapshot is reduced to modelling pathways.
+
+    KEGG pathway-gene links can include very small entries.  The project keeps
+    a pathway only when at least five distinct normalized genes remain after
+    parsing.  This table makes the 161-to-155 transition inspectable instead of
+    leaving it implicit in a single conditional.
+    """
+    kegg, names = parse_kegg(raw_dir)
+    rows = []
+    for pathway_id in sorted(kegg):
+        n_unique_genes = len(kegg[pathway_id])
+        kept = n_unique_genes >= MIN_PATHWAY_GENES
+        rows.append(
+            {
+                "pathway_id": pathway_id,
+                "pathway_name": names.get(pathway_id, pathway_id),
+                "n_unique_linked_genes": n_unique_genes,
+                "minimum_required_genes": MIN_PATHWAY_GENES,
+                "kept_for_modelling": kept,
+                "exclusion_reason": "" if kept else "fewer_than_5_unique_linked_genes",
+            }
+        )
+    save_table(TABLE_DIR / "kegg_pathway_filter_audit.csv", rows)
+    save_json(
+        TABLE_DIR / "kegg_pathway_filter_summary.json",
+        {
+            "raw_distinct_pathways_with_gene_links": len(rows),
+            "kept_pathways": sum(bool(row["kept_for_modelling"]) for row in rows),
+            "excluded_pathways": sum(not bool(row["kept_for_modelling"]) for row in rows),
+            "rule": "keep pathways with at least 5 distinct normalized linked genes",
+        },
+    )
 
 
 def load_cached_bundle() -> DatasetBundle:
@@ -1237,8 +1349,13 @@ def records_to_matrix(
     return X, y
 
 
-def prepare_primary_context(bundle: DatasetBundle, ratio: int = 2) -> PrimaryContext:
+def prepare_primary_context(
+    bundle: DatasetBundle,
+    ratio: int = DEFAULT_PRIMARY_RATIO,
+) -> PrimaryContext:
     """Create the canonical outer split and select GO terms on training only."""
+    if ratio < 1:
+        raise ValueError(f"Primary negative ratio must be at least 1, got {ratio}.")
     positives = pathway_records(bundle)
     train_positives, test_positives = split_positive_records(positives, seed=SEED)
     train_records = build_side_records(
@@ -1289,6 +1406,7 @@ def prepare_primary_context(bundle: DatasetBundle, ratio: int = 2) -> PrimaryCon
         y_train=y_train,
         X_test=X_test,
         y_test=y_test,
+        ratio=ratio,
     )
 
 
@@ -1569,9 +1687,16 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
     construction.  Repeated CV uses source-isolated folds under the fixed
     primary training-selected representation.
     """
-    folds = build_cv_fold_datasets(bundle, context, ratio=2, fast=fast, analysis_name="main_benchmark_cv")
+    ratio_label = f"1:{context.ratio}"
+    folds = build_cv_fold_datasets(
+        bundle,
+        context,
+        ratio=context.ratio,
+        fast=fast,
+        analysis_name="main_benchmark_cv",
+    )
     save_cv_fold_outputs(folds, context)
-    spw = scale_pos_weight_from_labels(context.y_train, "main_benchmark", {"ratio": "1:2"})
+    spw = scale_pos_weight_from_labels(context.y_train, "main_benchmark", {"ratio": ratio_label})
     factories = reference_model_factories(fast)
     rows = []
     fitted: Dict[str, Any] = {}
@@ -1583,6 +1708,7 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         scores = predict_scores(model, context.X_test)
         row = {
             "model": name,
+            "primary_ratio": ratio_label,
             "cv_auroc_mean": cv_mean,
             "cv_auroc_sd": cv_sd,
             "scale_pos_weight": spw if name == "XGBoost" else float("nan"),
@@ -1616,11 +1742,13 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
 
 
 def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> List[Dict[str, Any]]:
-    """Evaluate XGBoost across pos:neg ratios 1:1 to 1:5.
+    """Evaluate XGBoost across pos:neg ratios under one fixed GO representation.
 
-    Demonstrates that AUROC is stable while AUPRC declines with higher
-    imbalance, supporting the paper's choice of 1:2 ratio.
-    Produces table_robustness.csv and Fig7_robustness.png.
+    The same positive split and the GO terms selected under the current primary
+    ratio are reused for every row, isolating the effect of class balance.  The
+    manuscript's primary-ratio figure is produced separately by
+    ``compare_primary_ratios.py`` because that comparison gives every ratio its
+    own training-selected GO representation.
     """
     rows = []
     for ratio in [1, 2, 3, 4, 5]:
@@ -1663,6 +1791,7 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
         scores = predict_scores(model, X_test)
         row = {
             "ratio": f"1:{ratio}",
+            "feature_selection_primary_ratio": f"1:{context.ratio}",
             "n_pos": len(context.train_positive_records) + len(context.test_positive_records),
             "n_neg": int((y_train == 0).sum() + (y_test == 0).sum()),
             "scale_pos_weight": spw,
@@ -1678,11 +1807,10 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
     ax.plot([r["ratio"] for r in rows], [r["test_auprc"] for r in rows], marker="o", label="AUPRC")
     ax.set_xlabel("Positive:negative ratio")
     ax.set_ylabel("Held-out metric")
-    ax.set_title("Negative-ratio sensitivity")
+    ax.set_title("Ratio sensitivity under a fixed GO representation")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(FIG_DIR / "ratio_sensitivity.png", dpi=220)
-    fig.savefig(FIG_DIR / "Fig7_robustness.png", dpi=220)
+    fig.savefig(FIG_DIR / "ratio_sensitivity_fixed_features.png", dpi=220)
     plt.close(fig)
 
     latex_df = pd.DataFrame(rows)[
@@ -1692,7 +1820,7 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
     write_latex_tabular(
         LATEX_TABLE_DIR / "table_robustness.tex",
         latex_df,
-        "Negative-sampling ratio sensitivity.",
+        "Negative-sampling ratio sensitivity under the fixed primary feature representation.",
         "tab:robustness_recomputed",
     )
     return rows
@@ -1808,7 +1936,12 @@ def run_model_comparison(
     # random splits or feature-selection outcomes.
     X_train, y_train = context.X_train, context.y_train
     X_test, y_test = context.X_test, context.y_test
-    spw = scale_pos_weight_from_labels(y_train, "supplementary_model_comparison", {"ratio": "1:2"})
+    ratio_label = f"1:{context.ratio}"
+    spw = scale_pos_weight_from_labels(
+        y_train,
+        "supplementary_model_comparison",
+        {"ratio": ratio_label},
+    )
     selected_go_sha256 = stable_json_sha256(context.selected_go)
     split_sha256 = primary_split_sha256(context)
     rows = []
@@ -1826,6 +1959,7 @@ def run_model_comparison(
         scores = predict_scores(model, X_test)
         row = {
             "model": name,
+            "primary_ratio": ratio_label,
             "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
             "feature_selection_protocol": "primary_train_fixed60",
             "selected_go_sha256": selected_go_sha256,
@@ -1851,6 +1985,7 @@ def run_model_comparison(
         rows.append(
             {
                 "model": name,
+                "primary_ratio": ratio_label,
                 "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
                 "feature_selection_protocol": "primary_train_fixed60",
                 "selected_go_sha256": selected_go_sha256,
@@ -1896,7 +2031,10 @@ def run_model_comparison(
     write_latex_tabular(
         LATEX_TABLE_DIR / "table_method_comparison.tex",
         latex_df,
-        "Systematic comparison of machine-learning methods.",
+        (
+            "Systematic comparison of machine-learning methods. Wall-clock "
+            "times use the environment recorded in compute_environment.csv."
+        ),
         "tab:method_comparison_recomputed",
     )
     return rows
@@ -1933,7 +2071,8 @@ def run_ablation(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> 
     """
     X_train, y_train = context.X_train, context.y_train
     X_test, y_test = context.X_test, context.y_test
-    spw = scale_pos_weight_from_labels(y_train, "feature_ablation", {"ratio": "1:2"})
+    ratio_label = f"1:{context.ratio}"
+    spw = scale_pos_weight_from_labels(y_train, "feature_ablation", {"ratio": ratio_label})
     rows = []
     for name, cols in feature_group_indices(bundle).items():
         model = xgb_model(scale_pos_weight=spw, fast=fast)
@@ -1941,6 +2080,7 @@ def run_ablation(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> 
         scores = predict_scores(model, X_test[:, cols])
         row = {
             "configuration": name,
+            "primary_ratio": ratio_label,
             "d": len(cols),
             "feature_selection_protocol": "primary_train_fixed60",
             "scale_pos_weight": spw,
@@ -1994,14 +2134,14 @@ def run_lofo(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> List
         train_records = build_side_records(
             train_pos,
             bundle,
-            ratio=2,
+            ratio=context.ratio,
             negative_seed=SEED + 100,
             prefix=f"LOFO_{fam}_TRAIN",
         )
         test_records = build_side_records(
             test_pos,
             bundle,
-            ratio=2,
+            ratio=context.ratio,
             negative_seed=SEED + 200,
             prefix=f"LOFO_{fam}_TEST",
         )
@@ -2014,6 +2154,7 @@ def run_lofo(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> List
         scores = predict_scores(model, X_te)
         row = {
             "held_out_family": fam,
+            "primary_ratio": f"1:{context.ratio}",
             "n_train_pos": len(train_pos),
             "n_test_pos": len(test_pos),
             "n_test_neg": int((y_te == 0).sum()),
@@ -2054,7 +2195,12 @@ def run_lofo(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> List
     return rows
 
 
-def run_importance(bundle: DatasetBundle, model: Any, X_test: np.ndarray) -> List[Dict[str, Any]]:
+def run_importance(
+    bundle: DatasetBundle,
+    context: PrimaryContext,
+    model: Any,
+    X_test: np.ndarray,
+) -> List[Dict[str, Any]]:
     """Compute feature importance via SHAP (preferred) or model importances (fallback).
 
     Uses TreeExplainer on up to 300 test samples; if SHAP is unavailable,
@@ -2076,7 +2222,13 @@ def run_importance(bundle: DatasetBundle, model: Any, X_test: np.ndarray) -> Lis
         importance = getattr(model, "feature_importances_", np.zeros(len(bundle.feature_names)))
         method = "model_feature_importance_fallback"
     rows = [
-        {"rank": i + 1, "feature": bundle.feature_names[idx], "importance": float(importance[idx]), "method": method}
+        {
+            "rank": i + 1,
+            "feature": bundle.feature_names[idx],
+            "importance": float(importance[idx]),
+            "method": method,
+            "primary_ratio": f"1:{context.ratio}",
+        }
         for i, idx in enumerate(np.argsort(importance)[::-1][:30])
     ]
     save_table_aliases(rows, "feature_importance.csv", "table_top_features.csv")
@@ -2116,6 +2268,7 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
 
     split_payload = {
         "protocol": {
+            "primary_ratio": f"1:{context.ratio}",
             "split_unit": "positive_pathway",
             "stratification": "database_source",
             "test_size": PRIMARY_TEST_SIZE,
@@ -2168,6 +2321,7 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
         split_audit_rows.append(
             {
                 "split": split_name,
+                "primary_ratio": f"1:{context.ratio}",
                 "n_positive": len(positives),
                 "n_negative": len(negatives),
                 "n_total": len(records),
@@ -2196,7 +2350,7 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
     save_table(TABLE_DIR / "main_split_audit.csv", split_audit_rows)
 
 
-def save_processed_data(bundle: DatasetBundle) -> None:
+def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
     """Persist the processed dataset (pathways, GO maps, features) and generate Fig5_datastats.png."""
     save_json(DATA_DIR / "all_pathways.json", bundle.pathways)
     save_json(DATA_DIR / "gene_go.json", {k: sorted(v) for k, v in bundle.gene_go.items()})
@@ -2209,6 +2363,7 @@ def save_processed_data(bundle: DatasetBundle) -> None:
             "feature_names": bundle.feature_names,
             "feat_sel_stages": bundle.feature_stages,
             "data_source": bundle.source,
+            "primary_ratio": f"1:{context.ratio}",
             "go_selection_mode": GO_SELECTION_MODE,
             "feature_selection_scope": "outer_train_only",
         },
@@ -2226,6 +2381,9 @@ def save_processed_data(bundle: DatasetBundle) -> None:
     save_table(TABLE_DIR / "pathway_inventory.csv", rows)
     summary = {
         "dataset_source": bundle.source,
+        "primary_ratio": f"1:{context.ratio}",
+        "positive_fraction_train": float(np.mean(context.y_train == 1)),
+        "positive_fraction_test": float(np.mean(context.y_test == 1)),
         "n_pathways": len(rows),
         "n_kegg": sum(1 for r in rows if r["source"] == "KEGG"),
         "n_aracyc": sum(1 for r in rows if r["source"] == "AraCyc"),
@@ -2508,6 +2666,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
     # the outer training side.  Source-derived controls are isolated, but GO
     # selection is not repeated inside CV or LOFO folds.
     for row in rows:
+        row["primary_ratio"] = f"1:{args.primary_ratio}"
         row["feature_selection_protocol"] = "fixed_primary_training_selected"
         row["nested_feature_selection"] = False
         row["negative_source_isolation"] = True
@@ -2541,6 +2700,9 @@ def save_result_summary(
     annotated_pathway_genes = pathway_member_genes & set(bundle.gene_go)
     summary = {
         "dataset_source": bundle.source,
+        "primary_ratio": f"1:{context.ratio}",
+        "positive_fraction_train": float(np.mean(context.y_train == 1)),
+        "positive_fraction_test": float(np.mean(context.y_test == 1)),
         "n_pathways": len(bundle.pathways),
         "n_kegg": sum(1 for r in bundle.pathways.values() if r["source"] == "KEGG"),
         "n_aracyc": sum(1 for r in bundle.pathways.values() if r["source"] == "AraCyc"),
@@ -2584,17 +2746,22 @@ def save_manifest(
     save_table(TABLE_DIR / "cv_scheme_audit.csv", cv_rows)
 
     versions = software_versions()
+    hardware = hardware_profile()
     save_json(OUT_DIR / "software_versions.json", versions)
+    save_compute_environment(hardware)
     provenance = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "git_commit": git_commit(),
         "working_tree_dirty": git_working_tree_dirty(),
-        "working_tree_dirty_scope": "source tree excluding code/generated* artifacts",
+        "working_tree_dirty_scope": (
+            "source tree excluding code/generated* and the active output directory"
+        ),
         "command": " ".join(["python3", project_relative_path(Path(__file__)), *sys.argv[1:]]),
         "project_root": ".",
         "output_dir": project_relative_path(OUT_DIR),
         "raw_dir": project_relative_path(Path(args.raw_dir)),
         "raw_source_checksums": raw_checksums,
+        "hardware_profile": hardware,
     }
     save_json(OUT_DIR / "provenance.json", provenance)
     summary = save_result_summary(bundle, context, sections, spw_rows)
@@ -2609,7 +2776,10 @@ def save_manifest(
         "args": manifest_args,
         "run_mode": run_mode,
         "quick": bool(args.quick),
-        "paper_result": not bool(args.quick),
+        "paper_result": not bool(args.quick) and context.ratio == DEFAULT_PRIMARY_RATIO,
+        "formal_full_run": not bool(args.quick),
+        "comparison_run": context.ratio != DEFAULT_PRIMARY_RATIO,
+        "primary_ratio": f"1:{context.ratio}",
         "dataset_source": bundle.source,
         "dataset_mode": dataset_mode_from_args(args),
         "negative_scheme": NEGATIVE_SCHEME,
@@ -2632,6 +2802,7 @@ def save_manifest(
         "scale_pos_weight_summary": scale_pos_weight_summary(spw_rows),
         "sections_run": list(sections),
         "software_versions": versions,
+        "hardware_profile": hardware,
         "git_commit": provenance["git_commit"],
         "working_tree_dirty": provenance["working_tree_dirty"],
         "working_tree_dirty_scope": provenance["working_tree_dirty_scope"],
@@ -2664,8 +2835,18 @@ def save_manifest(
         ],
         "paper_output_map": {
             "dataset_statistics": "figures/Fig5_datastats.png and tables/dataset_summary.csv",
+            "kegg_pathway_filter": (
+                "tables/kegg_pathway_filter_audit.csv and "
+                "tables/kegg_pathway_filter_summary.json"
+            ),
             "method_comparison": "tables/table_method_comparison.csv and figures/Fig8_methods.png",
-            "negative_ratio": "tables/table_robustness.csv and figures/Fig7_robustness.png",
+            "fixed_feature_ratio_sensitivity": (
+                "tables/table_robustness.csv and figures/ratio_sensitivity_fixed_features.png"
+            ),
+            "independent_primary_ratio_comparison": (
+                "tables/primary_ratio_performance_comparison.csv and "
+                "figures/Fig7_robustness.png; generated by compare_primary_ratios.py"
+            ),
             "lofo": "tables/table_lofo.csv and figures/Fig6_lofo.png",
             "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
             "feature_importance": "tables/table_top_features.csv and figures/Fig3_shap.png",
@@ -2711,15 +2892,16 @@ def run_pipeline(args: argparse.Namespace) -> None:
     else:
         print(f"Rebuilding dataset from raw source files in {args.raw_dir} ...", flush=True)
         bundle = load_raw_bundle(Path(args.raw_dir))
+        save_kegg_filter_audit(Path(args.raw_dir))
     print("Preparing source-isolated primary split and selecting GO terms on training records only ...", flush=True)
-    context = prepare_primary_context(bundle, ratio=2)
+    context = prepare_primary_context(bundle, ratio=args.primary_ratio)
     print(
         f"Dataset: {len(bundle.pathways)} pathways, {len(bundle.gene_go)} GO-annotated genes, "
         f"{len(bundle.selected_go)} selected GO terms, {len(bundle.feature_names)} features.",
         flush=True,
     )
     save_primary_context_outputs(context)
-    save_processed_data(bundle)
+    save_processed_data(bundle, context)
 
     sections = args.sections
     if "all" in sections:
@@ -2750,7 +2932,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     if "importance" in sections and main_result is not None:
         print("Running SHAP/model-importance summary ...", flush=True)
         xgb = main_result["models"]["XGBoost"]
-        run_importance(bundle, xgb, main_result["X_test"])
+        run_importance(bundle, context, xgb, main_result["X_test"])
         gc.collect()
 
     save_manifest(args, bundle, context, sections)
@@ -2783,6 +2965,8 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
             args.raw_dir,
             "--out-dir",
             str(OUT_DIR),
+            "--primary-ratio",
+            str(args.primary_ratio),
             "--sections",
             *chunk,
         ]
@@ -2794,9 +2978,11 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
     # The child processes each write their own manifest.  Replace that with a
     # single top-level manifest that documents the complete paper run.
     bundle = load_cached_bundle() if args.dataset_source == "cached" else load_raw_bundle(Path(args.raw_dir))
-    context = prepare_primary_context(bundle, ratio=2)
+    if args.dataset_source == "raw":
+        save_kegg_filter_audit(Path(args.raw_dir))
+    context = prepare_primary_context(bundle, ratio=args.primary_ratio)
     save_primary_context_outputs(context)
-    save_processed_data(bundle)
+    save_processed_data(bundle, context)
     save_manifest(
         args,
         bundle,
@@ -2837,6 +3023,8 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
             args.raw_dir,
             "--out-dir",
             str(OUT_DIR),
+            "--primary-ratio",
+            str(args.primary_ratio),
             "--sections",
             *chunk,
         ]
@@ -2846,9 +3034,11 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
         subprocess.run(cmd, cwd=str(ROOT), env=env, check=True)
 
     bundle = load_cached_bundle() if args.dataset_source == "cached" else load_raw_bundle(Path(args.raw_dir))
-    context = prepare_primary_context(bundle, ratio=2)
+    if args.dataset_source == "raw":
+        save_kegg_filter_audit(Path(args.raw_dir))
+    context = prepare_primary_context(bundle, ratio=args.primary_ratio)
     save_primary_context_outputs(context)
-    save_processed_data(bundle)
+    save_processed_data(bundle, context)
     save_manifest(args, bundle, context, sections)
     print(f"\nDone. Outputs written to {OUT_DIR}")
 
@@ -2862,6 +3052,16 @@ def parse_args() -> argparse.Namespace:
         help="raw rebuilds from raw_sources/; cached uses archived JSON data for comparison only.",
     )
     parser.add_argument("--raw-dir", default=str(DEFAULT_RAW_DIR), help="Directory containing raw KEGG/AraCyc/TAIR files.")
+    parser.add_argument(
+        "--primary-ratio",
+        type=int,
+        choices=SUPPORTED_PRIMARY_RATIOS,
+        default=DEFAULT_PRIMARY_RATIO,
+        help=(
+            "Primary positive:negative ratio. The current paper branch uses 1:1; "
+            "all other ratios are written to isolated comparison directories by default."
+        ),
+    )
     parser.add_argument(
         "--out-dir",
         "--output-dir",
@@ -2884,15 +3084,24 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.full:
         args.quick = False
-    default_out = ROOT / ("generated_quick" if args.quick else "generated")
+    if args.primary_ratio == DEFAULT_PRIMARY_RATIO:
+        default_out = ROOT / ("generated_quick" if args.quick else "generated")
+    else:
+        name = f"ratio_1_{args.primary_ratio}" + ("_quick" if args.quick else "")
+        default_out = ROOT / "ratio_runs" / name
     if args.out_dir is None:
         args.out_dir = str(default_out)
     else:
         out_dir = Path(args.out_dir).expanduser()
         if not out_dir.is_absolute():
             out_dir = ROOT / out_dir
-        if args.quick and out_dir.resolve() == (ROOT / "generated").resolve():
-            parser.error("--quick cannot write to generated/; omit --out-dir or use generated_quick/ to avoid overwriting paper results.")
+        if out_dir.resolve() == (ROOT / "generated").resolve() and (
+            args.quick or args.primary_ratio != DEFAULT_PRIMARY_RATIO
+        ):
+            parser.error(
+                "Only a full 1:1 run may write to generated/. Omit --out-dir "
+                "to use the isolated quick or ratio-specific directory."
+            )
         args.out_dir = str(out_dir)
     return args
 
