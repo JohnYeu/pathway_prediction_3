@@ -7,28 +7,32 @@ source files under `raw_sources/`.
 
 ## What This Code Rebuilds
 
-The current candidate pipeline regenerates the main intermediate products under
-`generated_grouped_cv_candidate/`:
+The pipeline regenerates the main intermediate products under `generated/`:
 
 - source records and exact gene-set groups: `data/pathway_source_records.json`
   and `data/pathway_gene_set_groups.json`
 - grouping audit: `tables/pathway_grouping_summary.csv` and
   `tables/pathway_duplicate_groups.csv`
 - main held-out benchmark: `tables/main_benchmark.csv`
+- held-out predictions, confusion matrix, and negative-type diagnostics:
+  `tables/heldout_predictions.csv`, `tables/heldout_confusion_matrix.csv`,
+  `tables/heldout_score_by_type.csv`, and
+  `tables/heldout_negative_type_performance.csv`
 - training-only nested ratio comparison: `tables/ratio_cv_per_fold.csv` and
   `tables/ratio_cv_summary.csv`
 - 13-method comparison: `tables/model_comparison.csv`
-- leave-one-family-out validation: `tables/lofo.csv`
 - ablation study: `tables/ablation.csv`
 - feature importance: `tables/feature_importance.csv`
 - split, negative-source, GO-selection, and CV audits under `tables/` and `data/`
 
-It also creates candidate figures without changing the current manuscript:
+It also creates the scientific figures used by the current manuscript:
 
 - `generated/figures/Fig3_shap.png`
 - `generated/figures/Fig5_datastats.png`
-- `generated/figures/Fig6_lofo.png`
-- `generated_grouped_cv_candidate/figures/Fig7_robustness.png`
+- `generated/figures/Fig7_robustness.png`
+- `generated/figures/FigC_roc_pr.png`
+- `generated/figures/FigF_confusion.png`
+- `generated/figures/FigG_score_by_type.png`
 - `generated/figures/Fig8_methods.png`
 - `generated/figures/Fig_ablation.png`
 
@@ -87,8 +91,7 @@ Held-out reference models and supplementary classifiers use the same 60 terms
 selected from the complete outer-training side. Ratio comparison is performed
 only inside outer training. Each ratio/fold independently generates controls
 and repeats variance and mutual-information selection on fold training. The
-outer test set is evaluated only for the preselected 1:1 candidate. LOFO uses
-the fixed outer-training representation and is not nested.
+outer test set is evaluated only for the preselected 1:1 candidate.
 
 An optional cached-data mode is available for comparison with archived inputs:
 
@@ -109,8 +112,8 @@ For heavier paper-style reruns, omit `--quick`:
 python3 reproducible_pipeline.py --sections all
 ```
 
-Full mode writes to `generated_grouped_cv_candidate/`. The preserved
-pre-grouping result directories and LaTeX files are not overwritten.
+Full mode writes to `generated/`. Quick runs remain isolated under `/tmp` and
+cannot overwrite the paper results.
 
 ## Ratio Comparison
 

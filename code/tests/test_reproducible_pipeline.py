@@ -56,10 +56,18 @@ class ReproduciblePipelineTests(unittest.TestCase):
         self.assertEqual(summary["exact_duplicate_group_count"], 20)
         self.assertEqual(summary["collapsed_extra_record_count"], 26)
         self.assertEqual(summary["mixed_source_group_count"], 1)
-        self.assertEqual(summary["mixed_family_group_count"], 4)
         source_union = {gene for info in self.bundle.source_pathways.values() for gene in info["genes"]}
         group_union = {gene for info in self.bundle.pathways.values() for gene in info["genes"]}
         self.assertEqual(source_union, group_union)
+
+    def test_no_inferred_pathway_category_metadata(self) -> None:
+        retired_keys = {"family", "source_families", "mixed_family", "cross_same_family"}
+        for info in self.bundle.source_pathways.values():
+            self.assertFalse(retired_keys & set(info))
+        for info in self.bundle.pathways.values():
+            self.assertFalse(retired_keys & set(info))
+        for record in self.context.train_records + self.context.test_records:
+            self.assertFalse(retired_keys & set(record))
 
     def test_training_selection_has_fixed_dimension(self) -> None:
         self.assertEqual(len(self.context.selected_go), pipeline.N_GO_TERMS)
@@ -188,6 +196,29 @@ class ReproduciblePipelineTests(unittest.TestCase):
             model.fit(fold.X_train, fold.y_train)
             predictions.append(pipeline.predict_scores(model, fold.X_validation))
         self.assertTrue(np.array_equal(predictions[0], predictions[1]))
+
+    def test_heldout_diagnostics_use_supplied_scores(self) -> None:
+        records = [
+            {"id": "P1", "label": 1, "genes": ["G1"]},
+            {"id": "P2", "label": 1, "genes": ["G2"]},
+            {"id": "N1", "label": 0, "negative_type": "random_5_30", "genes": ["G3"]},
+            {"id": "N2", "label": 0, "negative_type": "shuffled", "genes": ["G4"]},
+            {"id": "N3", "label": 0, "negative_type": "partial_50_80", "genes": ["G5"]},
+            {"id": "N4", "label": 0, "negative_type": "cross_pathway", "genes": ["G6"]},
+        ]
+        labels = np.array([1, 1, 0, 0, 0, 0])
+        scores = np.array([0.9, 0.4, 0.1, 0.2, 0.7, 0.6])
+        tables = pipeline.heldout_diagnostic_tables(records, labels, scores)
+
+        confusion = tables["confusion"][0]
+        self.assertEqual(confusion["true_positive"], 1)
+        self.assertEqual(confusion["false_negative"], 1)
+        self.assertEqual(confusion["true_negative"], 2)
+        self.assertEqual(confusion["false_positive"], 2)
+        type_rows = {row["gene_set_type"]: row for row in tables["score_by_type"]}
+        self.assertEqual(type_rows["random_5_30"]["false_positive_count_at_0_5"], 0)
+        self.assertEqual(type_rows["partial_50_80"]["false_positive_count_at_0_5"], 1)
+        self.assertEqual(len(tables["negative_type_performance"]), 4)
 
 
 if __name__ == "__main__":

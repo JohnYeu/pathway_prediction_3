@@ -21,7 +21,7 @@ The pipeline:
 4. regenerates the four control classes used by this analysis
    (random[5,30], shuffled, partial, cross-pathway);
 5. runs the main benchmark, ratio sensitivity, model comparison, ablation,
-   leave-one-family-out, and SHAP/importance summary;
+   and SHAP/importance summary;
 6. saves machine-readable tables, figures, and provenance under an isolated
    result directory.
 
@@ -77,9 +77,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     average_precision_score,
     brier_score_loss,
+    confusion_matrix,
     f1_score,
+    precision_recall_curve,
     precision_score,
     recall_score,
+    roc_curve,
     roc_auc_score,
 )
 from sklearn.model_selection import StratifiedKFold, train_test_split
@@ -162,7 +165,7 @@ class DatasetBundle:
     """Central data container shared across all analysis stages.
 
     Fields:
-        pathways:       pid -> {name, genes, source, family}
+        pathways:       pid -> {name, genes, source}
         gene_go:        gene -> set of GO terms
         go_genes:       GO term -> set of genes (reverse index)
         go_term_names:  GO ID -> human-readable name
@@ -183,7 +186,7 @@ class DatasetBundle:
     source: str
     grouping_summary: Dict[str, Any] = field(default_factory=dict)
     duplicate_groups: List[Dict[str, Any]] = field(default_factory=list)
-    mixed_metadata_groups: List[Dict[str, Any]] = field(default_factory=list)
+    mixed_source_groups: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -198,7 +201,6 @@ class NegativeSample:
     genes: List[str]
     negative_type: str
     source_pathway_ids: List[str]
-    source_families: List[str]
     source_overlap_count: int
     source_overlap_fraction: float
     generation_seed: int
@@ -217,7 +219,7 @@ class PrimaryContext:
     The positive pathways are split before any source-derived controls are made.
     GO variance/MI selection sees only ``train_records``.  The resulting 60 GO
     terms are then fixed for every paper analysis, including held-out comparison,
-    ratio sensitivity, ablation, SHAP, and non-nested LOFO.
+    ratio sensitivity, ablation, and SHAP.
     """
 
     selected_go: List[str]
@@ -268,6 +270,27 @@ class CVFoldData:
 def ensure_dirs() -> None:
     for d in (OUT_DIR, TABLE_DIR, LATEX_TABLE_DIR, FIG_DIR, DATA_DIR):
         d.mkdir(parents=True, exist_ok=True)
+
+
+def remove_obsolete_analysis_outputs() -> None:
+    """Remove files produced only by the retired validation analysis.
+
+    A rerun may target an existing result directory. Removing this short,
+    explicit list prevents retired tables or metadata from being mistaken for
+    outputs of the current source-stratified pipeline.
+    """
+    obsolete_paths = [
+        OUT_DIR / "metric_figures_manifest.json",
+        TABLE_DIR / "lofo.csv",
+        TABLE_DIR / "table_lofo.csv",
+        TABLE_DIR / "pathway_mixed_metadata_groups.csv",
+        LATEX_TABLE_DIR / "table_lofo.tex",
+        FIG_DIR / "lofo.png",
+        FIG_DIR / "Fig6_lofo.png",
+    ]
+    for path in obsolete_paths:
+        if path.exists():
+            path.unlink()
 
 
 def save_json(path: Path, obj: Any) -> None:
@@ -333,7 +356,7 @@ def scale_pos_weight_from_labels(
 
     XGBoost defines ``scale_pos_weight`` as negative examples divided by
     positive examples. Computing the value from the actual training labels
-    keeps the 1:1 and 1:2 branches, LOFO folds, and ratio-sensitivity runs
+    keeps the 1:1 and 1:2 branches and ratio-sensitivity runs
     consistent with the data they actually use.
     """
     y_arr = np.asarray(y_train)
@@ -567,6 +590,7 @@ def scale_pos_weight_audit_rows() -> List[Dict[str, Any]]:
     path = TABLE_DIR / "scale_pos_weight_audit.csv"
     if path.exists():
         existing = pd.read_csv(path).to_dict("records")
+        existing = [row for row in existing if str(row.get("analysis", "")) != "lofo"]
     if SCALE_POS_WEIGHT_LOG:
         df = pd.concat([pd.DataFrame(existing), pd.DataFrame(SCALE_POS_WEIGHT_LOG)], ignore_index=True)
         df = df.drop_duplicates()
@@ -761,60 +785,12 @@ def parse_aracyc(raw_dir: Path) -> Tuple[Dict[str, set], Dict[str, str], Dict[st
     return dict(aracyc), names, stats_out
 
 
-# ---------------------------------------------------------------------------
-# Pathway family classification (for LOFO validation)
-# ---------------------------------------------------------------------------
-#
-# Pathways are grouped into biological families so that the LOFO analysis can
-# hold out all pathways in one family at a time.  KEGG families are determined
-# by the numeric pathway code range; AraCyc families are keyword-based.
-#
-
-def kegg_family(pid: str, name: str) -> str:
-    """Assign a KEGG pathway to a biological family based on its numeric code and name."""
-    code = int(pid[3:]) if pid.startswith("ath") and pid[3:].isdigit() else -1
-    lower = name.lower()
-    if 100 <= code < 200 or "carbon" in lower or "glycolysis" in lower:
-        return "KEGG_Metabolism"
-    if 500 <= code < 600 or "lipid" in lower or "fatty" in lower:
-        return "KEGG_Lipid"
-    if 3000 <= code < 4000 or "ribosome" in lower or "spliceosome" in lower:
-        return "KEGG_GeneticInfo"
-    if 4000 <= code < 5000 or "signaling" in lower or "circadian" in lower:
-        return "KEGG_SignalTrans"
-    if 4600 <= code < 6000 or "infection" in lower or "immune" in lower:
-        return "KEGG_Environmental"
-    if "membrane" in lower or "transport" in lower:
-        return "KEGG_Membrane"
-    if "polyamine" in lower:
-        return "KEGG_Polyamine"
-    return "KEGG_Cellular"
-
-
-def aracyc_family(name: str) -> str:
-    """Assign an AraCyc pathway to a biological family via keyword matching on its name."""
-    lower = name.lower()
-    if any(x in lower for x in ["lipid", "fatty acid", "wax", "sterol"]):
-        return "AraCyc_Lipid"
-    if any(x in lower for x in ["amino", "arginine", "lysine", "methionine", "tryptophan"]):
-        return "AraCyc_AminoAcid"
-    if any(x in lower for x in ["cofactor", "vitamin", "thiamin", "folate", "biotin", "pyridox"]):
-        return "AraCyc_Cofactor"
-    if any(x in lower for x in ["carbohydrate", "starch", "sucrose", "glucose", "mannose", "cellulose"]):
-        return "AraCyc_Carbohydrate"
-    if any(x in lower for x in ["nucleotide", "purine", "pyrimidine"]):
-        return "AraCyc_Nucleotide"
-    if any(x in lower for x in ["flavonoid", "phenylpropanoid", "secondary", "terpenoid", "coumarin"]):
-        return "AraCyc_Secondary"
-    return "AraCyc_Misc"
-
-
 def build_raw_pathways(raw_dir: Path) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
     """Merge KEGG and AraCyc source records into a unified dictionary.
 
-    Applies the MIN_PATHWAY_GENES filter (>=5 genes) and assigns biological
-    family labels needed for LOFO validation.  AraCyc pathway IDs are prefixed
-    with 'AC_' to avoid collisions with KEGG IDs.
+    Applies the MIN_PATHWAY_GENES filter (>=5 genes). AraCyc pathway IDs are
+    prefixed with ``AC_`` to avoid collisions with KEGG IDs. Database source is
+    retained because it is an explicit field used for train/test stratification.
     """
     kegg, kegg_names = parse_kegg(raw_dir)
     aracyc, aracyc_names, aracyc_stats = parse_aracyc(raw_dir)
@@ -828,7 +804,6 @@ def build_raw_pathways(raw_dir: Path) -> Tuple[Dict[str, Dict[str, Any]], Dict[s
                 "name": name,
                 "genes": genes,
                 "source": "KEGG",
-                "family": kegg_family(pid, name),
             }
     n_kegg = sum(1 for info in pathways.values() if info["source"] == "KEGG")
 
@@ -840,7 +815,6 @@ def build_raw_pathways(raw_dir: Path) -> Tuple[Dict[str, Dict[str, Any]], Dict[s
                 "name": name,
                 "genes": genes,
                 "source": "AraCyc",
-                "family": aracyc_family(name),
             }
 
     stats = {
@@ -888,25 +862,20 @@ def group_identical_gene_sets(
         pathway_ids = [pathway_id for pathway_id, _ in sorted(members)]
         names = [str(info.get("name", pathway_id)) for pathway_id, info in sorted(members)]
         sources = [str(info.get("source", "")) for _, info in sorted(members)]
-        families = [str(info.get("family", "")) for _, info in sorted(members)]
         unique_sources = sorted(set(sources))
-        unique_families = sorted(set(families))
         group = {
             "name": representative_info.get("name", representative_id),
             "genes": list(genes),
             "source": representative_info.get("source", ""),
-            "family": representative_info.get("family", ""),
             "representative_pathway_id": representative_id,
             "gene_set_group_id": group_id,
             "gene_set_sha256": digest,
             "source_pathway_ids": pathway_ids,
             "source_pathway_names": names,
             "source_databases": sources,
-            "source_families": families,
             "source_record_count": len(members),
             "database_count": len(unique_sources),
             "mixed_source": len(unique_sources) > 1,
-            "mixed_family": len(unique_families) > 1,
             "stratification_source": representative_info.get("source", ""),
         }
         groups[representative_id] = group
@@ -922,20 +891,17 @@ def group_identical_gene_sets(
                     "source_pathway_ids": ";".join(pathway_ids),
                     "source_pathway_names": ";".join(names),
                     "source_databases": ";".join(sources),
-                    "source_families": ";".join(families),
                     "raw_gene_count": len(genes),
                 }
             )
-        if group["mixed_source"] or group["mixed_family"]:
+        if group["mixed_source"]:
             mixed_rows.append(
                 {
                     "gene_set_group_id": group_id,
                     "representative_pathway_id": representative_id,
                     "mixed_source": group["mixed_source"],
-                    "mixed_family": group["mixed_family"],
                     "source_pathway_ids": ";".join(pathway_ids),
                     "source_databases": ";".join(sources),
-                    "source_families": ";".join(families),
                 }
             )
 
@@ -951,7 +917,6 @@ def group_identical_gene_sets(
         "exact_duplicate_group_count": len(duplicate_rows),
         "collapsed_extra_record_count": len(source_pathways) - len(groups),
         "mixed_source_group_count": sum(bool(info["mixed_source"]) for info in groups.values()),
-        "mixed_family_group_count": sum(bool(info["mixed_family"]) for info in groups.values()),
         "grouping_rule": "exact equality of sorted normalized gene membership",
     }
     return groups, summary, duplicate_rows, mixed_rows
@@ -1012,19 +977,17 @@ def load_cached_bundle() -> DatasetBundle:
         for term in terms:
             go_genes[term].add(gene)
 
-    # The cached all_pathways.json only has name/genes.  Add source/family
-    # metadata so downstream tables can be generated consistently.
+    # The cached all_pathways.json only has name/genes. Add the explicit source
+    # field so comparison runs use the same source-based stratification.
     for pid, info in pathways.items():
         if pid.startswith("ath"):
             info.setdefault("source", "KEGG")
-            info.setdefault("family", kegg_family(pid, info.get("name", pid)))
         else:
             info.setdefault("source", "AraCyc")
-            info.setdefault("family", aracyc_family(info.get("name", pid)))
         info["genes"] = sorted(set(info["genes"]))
 
     source_pathways = {pid: dict(info) for pid, info in pathways.items()}
-    groups, grouping_summary, duplicate_groups, mixed_groups = group_identical_gene_sets(source_pathways)
+    groups, grouping_summary, duplicate_groups, mixed_source_groups = group_identical_gene_sets(source_pathways)
     return DatasetBundle(
         pathways=groups,
         source_pathways=source_pathways,
@@ -1039,7 +1002,7 @@ def load_cached_bundle() -> DatasetBundle:
         source="cached",
         grouping_summary=grouping_summary,
         duplicate_groups=duplicate_groups,
-        mixed_metadata_groups=mixed_groups,
+        mixed_source_groups=mixed_source_groups,
     )
 
 
@@ -1070,10 +1033,9 @@ def generate_negative_samples(
       2. partial_50_80:    50-80% subsample of a real pathway's genes
       3. cross_pathway:    half from one pathway + half from another
 
-    Every emitted set contains at least five GO-annotated genes.  Cross-pathway
-    controls use two distinct modelling instances.  The source pathways may
-    still belong to the same broad family because functional-family filtering
-    is outside the scope of this benchmark definition.
+    Every emitted set contains at least five GO-annotated genes. Cross-pathway
+    controls use two distinct modelling instances. No inferred functional
+    category is used when choosing either source.
     """
     rng = random.Random(seed)
     annotated_pool = set(gene_pool)
@@ -1142,7 +1104,6 @@ def generate_negative_samples(
         source_ids = [item[0] for item in source_items]
         if negative_type == "cross_pathway" and len(set(source_ids)) != 2:
             raise AssertionError("cross_pathway controls require two distinct source IDs.")
-        source_families = [str(item[1].get("family", "")) for item in source_items]
         source_gene_union = set().union(*(set(item[2]) for item in source_items)) if source_items else set()
         overlap_count = len(set(genes) & source_gene_union)
         out.append(
@@ -1150,7 +1111,6 @@ def generate_negative_samples(
                 genes=list(genes),
                 negative_type=negative_type,
                 source_pathway_ids=source_ids,
-                source_families=source_families,
                 source_overlap_count=overlap_count,
                 source_overlap_fraction=float(overlap_count / len(set(genes))) if genes else 0.0,
                 generation_seed=seed,
@@ -1283,7 +1243,7 @@ def load_raw_bundle(raw_dir: Path) -> DatasetBundle:
     raw_dir = Path(raw_dir)
     gene_go, go_genes, go_term_names, go_stats = parse_ath_go_goslim(raw_dir / "ATH_GO_GOSLIM.txt")
     source_pathways, raw_stats = build_raw_pathways(raw_dir)
-    pathways, grouping_summary, duplicate_groups, mixed_groups = group_identical_gene_sets(source_pathways)
+    pathways, grouping_summary, duplicate_groups, mixed_source_groups = group_identical_gene_sets(source_pathways)
     stages = {"raw": len(go_genes)}
     stages.update({f"raw_pathway_stat_{k}": v for k, v in raw_stats.items() if isinstance(v, int)})
     stages.update({f"raw_go_stat_{k}": v for k, v in go_stats.items() if isinstance(v, int)})
@@ -1299,7 +1259,7 @@ def load_raw_bundle(raw_dir: Path) -> DatasetBundle:
         source="raw",
         grouping_summary=grouping_summary,
         duplicate_groups=duplicate_groups,
-        mixed_metadata_groups=mixed_groups,
+        mixed_source_groups=mixed_source_groups,
     )
 
 
@@ -1375,23 +1335,19 @@ def pathway_records(bundle: DatasetBundle) -> List[Dict[str, Any]]:
                 "label": 1,
                 "source": info.get("source", "KEGG" if pid.startswith("ath") else "AraCyc"),
                 "stratification_source": info.get("stratification_source", info.get("source", "")),
-                "family": info.get("family", kegg_family(pid, info.get("name", pid)) if pid.startswith("ath") else aracyc_family(info.get("name", pid))),
                 "gene_set_group_id": info.get("gene_set_group_id", f"GSG_{gene_set_sha256(genes)[:16]}"),
                 "gene_set_sha256": info.get("gene_set_sha256", gene_set_sha256(genes)),
                 "representative_pathway_id": info.get("representative_pathway_id", pid),
                 "source_pathway_ids_all": list(info.get("source_pathway_ids", [pid])),
                 "source_pathway_names_all": list(info.get("source_pathway_names", [info.get("name", pid)])),
                 "source_databases_all": list(info.get("source_databases", [info.get("source", "")])),
-                "source_families_all": list(info.get("source_families", [info.get("family", "")])),
                 "source_record_count": int(info.get("source_record_count", 1)),
                 "database_count": int(info.get("database_count", 1)),
                 "mixed_source": bool(info.get("mixed_source", False)),
-                "mixed_family": bool(info.get("mixed_family", False)),
                 "raw_gene_count": len(genes),
                 "annotated_gene_count": sum(gene in bundle.gene_go for gene in genes),
                 "negative_type": "NA",
                 "source_pathway_ids": [],
-                "source_families": [],
                 "source_overlap_count": 0,
                 "source_overlap_fraction": 0.0,
                 "generation_seed": None,
@@ -1452,7 +1408,6 @@ def pathway_mapping_from_records(records: Sequence[Mapping[str, Any]]) -> Dict[s
             "name": record.get("name", record["id"]),
             "genes": list(record["genes"]),
             "source": record.get("source", ""),
-            "family": record.get("family", ""),
             "gene_set_group_id": record.get("gene_set_group_id", ""),
             "source_pathway_ids": list(record.get("source_pathway_ids_all", [record["id"]])),
         }
@@ -1462,20 +1417,16 @@ def pathway_mapping_from_records(records: Sequence[Mapping[str, Any]]) -> Dict[s
 
 def negative_sample_record(sample: NegativeSample, sample_id: str) -> Dict[str, Any]:
     """Convert a generated sample to the common record schema."""
-    same_family = len(sample.source_families) > 1 and len(set(sample.source_families)) == 1
     return {
         "id": sample_id,
         "name": f"{sample.negative_type}_{sample_id}",
         "genes": sorted(set(sample.genes)),
         "label": 0,
         "source": "synthetic",
-        "family": "negative",
         "negative_type": sample.negative_type,
         "source_pathway_ids": list(sample.source_pathway_ids),
-        "source_families": list(sample.source_families),
         "source_overlap_count": int(sample.source_overlap_count),
         "source_overlap_fraction": float(sample.source_overlap_fraction),
-        "cross_same_family": bool(same_family),
         "generation_seed": int(sample.generation_seed),
         "raw_gene_count": int(sample.raw_gene_count),
         "annotated_gene_count": int(sample.annotated_gene_count),
@@ -1556,10 +1507,10 @@ def split_positive_records(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Split positive pathways first, preserving KEGG/AraCyc proportions.
 
-    Family labels are intentionally not used here because two current families
-    contain a single pathway and therefore cannot appear on both sides.  A source
-    with fewer than two pathways is an explicit configuration error; there is no
-    silent fallback to an unstratified split.
+    Database source is explicit in the input records and is the only grouping
+    variable used for stratification. A source with fewer than two pathways is
+    an explicit configuration error; there is no silent fallback to an
+    unstratified split.
     """
     records = [dict(record) for record in positive_records]
     sources = [str(record.get("stratification_source", record["source"])) for record in records]
@@ -1706,6 +1657,291 @@ def metrics_from_scores(y_true: np.ndarray, scores: np.ndarray) -> Dict[str, flo
         "recall": float(recall_score(y_true, pred, zero_division=0)),
         "brier": float(brier_score_loss(y_true, scores)),
     }
+
+
+def heldout_diagnostic_tables(
+    records: Sequence[Mapping[str, Any]],
+    y_true: np.ndarray,
+    scores: np.ndarray,
+    threshold: float = 0.5,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Build traceable held-out prediction and negative-type summaries.
+
+    These tables all come from the same score vector used for the main XGBoost
+    row. Keeping the calculation here prevents the diagnostic figures from
+    silently fitting a second model with different settings.
+    """
+    y_arr = np.asarray(y_true, dtype=int)
+    score_arr = np.asarray(scores, dtype=float)
+    if len(records) != len(y_arr) or len(y_arr) != len(score_arr):
+        raise ValueError("Held-out records, labels, and scores must have equal length.")
+
+    predicted = (score_arr >= threshold).astype(int)
+    prediction_rows: List[Dict[str, Any]] = []
+    for record, label, score, prediction in zip(
+        records, y_arr, score_arr, predicted, strict=True
+    ):
+        gene_set_type = (
+            "curated_pathway"
+            if int(label) == 1
+            else str(record.get("negative_type", "unknown_control"))
+        )
+        prediction_rows.append(
+            {
+                "sample_id": str(record["id"]),
+                "label": int(label),
+                "gene_set_type": gene_set_type,
+                "score": float(score),
+                "predicted_label_at_0_5": int(prediction),
+                "raw_gene_count": int(record.get("raw_gene_count", len(record.get("genes", [])))),
+                "annotated_gene_count": int(
+                    record.get("annotated_gene_count", len(record.get("genes", [])))
+                ),
+                "source_pathway_ids": ";".join(record.get("source_pathway_ids", [])),
+            }
+        )
+
+    matrix = confusion_matrix(y_arr, predicted, labels=[0, 1])
+    tn, fp, fn, tp = (int(value) for value in matrix.ravel())
+    overall_metrics = metrics_from_scores(y_arr, score_arr)
+    confusion_rows = [
+        {
+            "threshold": threshold,
+            "true_negative": tn,
+            "false_positive": fp,
+            "false_negative": fn,
+            "true_positive": tp,
+            "n_test": len(y_arr),
+            "precision": overall_metrics["precision"],
+            "recall": overall_metrics["recall"],
+            "f1": overall_metrics["f1"],
+        }
+    ]
+
+    prediction_frame = pd.DataFrame(prediction_rows)
+    type_order = [
+        "curated_pathway",
+        "random_5_30",
+        "shuffled",
+        "partial_50_80",
+        "cross_pathway",
+    ]
+    type_rows: List[Dict[str, Any]] = []
+    for gene_set_type in type_order:
+        subset = prediction_frame[prediction_frame["gene_set_type"] == gene_set_type]
+        if subset.empty:
+            continue
+        values = subset["score"].to_numpy(dtype=float)
+        is_negative = gene_set_type != "curated_pathway"
+        positive_predictions = int((subset["predicted_label_at_0_5"] == 1).sum())
+        type_rows.append(
+            {
+                "gene_set_type": gene_set_type,
+                "n": len(subset),
+                "mean_score": float(np.mean(values)),
+                "score_sd": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
+                "q1_score": float(np.quantile(values, 0.25)),
+                "median_score": float(np.median(values)),
+                "q3_score": float(np.quantile(values, 0.75)),
+                "positive_prediction_count_at_0_5": positive_predictions,
+                "false_positive_count_at_0_5": positive_predictions if is_negative else 0,
+                "false_positive_rate_at_0_5": (
+                    float(positive_predictions / len(subset)) if is_negative else float("nan")
+                ),
+            }
+        )
+
+    positive_mask = prediction_frame["label"] == 1
+    negative_type_rows: List[Dict[str, Any]] = []
+    for negative_type in type_order[1:]:
+        negative_mask = prediction_frame["gene_set_type"] == negative_type
+        subset = prediction_frame[positive_mask | negative_mask]
+        if not negative_mask.any():
+            continue
+        metrics = metrics_from_scores(
+            subset["label"].to_numpy(dtype=int),
+            subset["score"].to_numpy(dtype=float),
+        )
+        negative_type_rows.append(
+            {
+                "negative_type": negative_type,
+                "n_positive": int(positive_mask.sum()),
+                "n_negative": int(negative_mask.sum()),
+                **metrics,
+            }
+        )
+
+    return {
+        "predictions": prediction_rows,
+        "confusion": confusion_rows,
+        "score_by_type": type_rows,
+        "negative_type_performance": negative_type_rows,
+    }
+
+
+def save_heldout_diagnostics(
+    context: PrimaryContext,
+    scores: np.ndarray,
+    threshold: float = 0.5,
+) -> Dict[str, Any]:
+    """Save held-out tables and figures from the fitted reference XGBoost model."""
+    diagnostics = heldout_diagnostic_tables(
+        context.test_records,
+        context.y_test,
+        scores,
+        threshold=threshold,
+    )
+    save_table(TABLE_DIR / "heldout_predictions.csv", diagnostics["predictions"])
+    save_table(TABLE_DIR / "heldout_confusion_matrix.csv", diagnostics["confusion"])
+    save_table(TABLE_DIR / "heldout_score_by_type.csv", diagnostics["score_by_type"])
+    save_table(
+        TABLE_DIR / "heldout_negative_type_performance.csv",
+        diagnostics["negative_type_performance"],
+    )
+
+    y_true = np.asarray(context.y_test, dtype=int)
+    score_arr = np.asarray(scores, dtype=float)
+    fpr, tpr, _ = roc_curve(y_true, score_arr)
+    precision_values, recall_values, _ = precision_recall_curve(y_true, score_arr)
+    auroc = float(roc_auc_score(y_true, score_arr))
+    auprc = float(average_precision_score(y_true, score_arr))
+    baseline = float(np.mean(y_true == 1))
+
+    blue, orange, teal = "#4c78a8", "#f58518", "#72b7b2"
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.6))
+    axes[0].plot(fpr, tpr, color=blue, lw=2.2, label=f"XGBoost (AUROC = {auroc:.3f})")
+    axes[0].plot([0, 1], [0, 1], "--", color="#999999", lw=1, label="Random (0.500)")
+    axes[0].set_xlabel("False positive rate (FP / (FP+TN))")
+    axes[0].set_ylabel("True positive rate / recall (TP / (TP+FN))")
+    axes[0].set_title("ROC curve")
+    axes[0].legend(loc="lower right", fontsize=9)
+    axes[0].set_xlim(-0.02, 1.02)
+    axes[0].set_ylim(-0.02, 1.02)
+    axes[1].plot(
+        recall_values,
+        precision_values,
+        color=orange,
+        lw=2.2,
+        label=f"XGBoost (AUPRC = {auprc:.3f})",
+    )
+    axes[1].axhline(
+        baseline,
+        ls="--",
+        color="#999999",
+        lw=1,
+        label=f"Random baseline ({baseline:.3f})",
+    )
+    axes[1].set_xlabel("Recall (TP / (TP+FN))")
+    axes[1].set_ylabel("Precision (TP / (TP+FP))")
+    axes[1].set_title("Precision-recall curve")
+    axes[1].legend(loc="lower left", fontsize=9)
+    axes[1].set_xlim(-0.02, 1.02)
+    axes[1].set_ylim(-0.02, 1.02)
+    fig.suptitle("Held-out discrimination of the reference XGBoost model", fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(FIG_DIR / "FigC_roc_pr.png", dpi=220)
+    plt.close(fig)
+
+    confusion_row = diagnostics["confusion"][0]
+    matrix = np.array(
+        [
+            [confusion_row["true_negative"], confusion_row["false_positive"]],
+            [confusion_row["false_negative"], confusion_row["true_positive"]],
+        ]
+    )
+    fig, ax = plt.subplots(figsize=(4.8, 4.4))
+    ax.imshow(matrix, cmap="Blues")
+    ax.set_xticks([0, 1], labels=["Pred. control", "Pred. pathway"])
+    ax.set_yticks([0, 1], labels=["Actual control", "Actual pathway"])
+    cell_labels = [
+        [f"TN = {matrix[0, 0]}", f"FP = {matrix[0, 1]}"],
+        [f"FN = {matrix[1, 0]}", f"TP = {matrix[1, 1]}"],
+    ]
+    for row_index in range(2):
+        for column_index in range(2):
+            ax.text(
+                column_index,
+                row_index,
+                cell_labels[row_index][column_index],
+                ha="center",
+                va="center",
+                color=("white" if matrix[row_index, column_index] > matrix.max() / 2 else "black"),
+                fontsize=12,
+                fontweight="bold",
+            )
+    ax.set_title(f"Confusion matrix (threshold = {threshold:.1f})", fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "FigF_confusion.png", dpi=220)
+    plt.close(fig)
+
+    score_frame = pd.DataFrame(diagnostics["predictions"])
+    display_names = {
+        "curated_pathway": "Curated\npathway",
+        "random_5_30": "Random",
+        "shuffled": "Shuffled",
+        "partial_50_80": "Partial\npathway",
+        "cross_pathway": "Cross-pathway\nmixture",
+    }
+    type_order = list(display_names)
+    groups = [
+        score_frame.loc[score_frame["gene_set_type"] == gene_set_type, "score"].to_numpy(dtype=float)
+        for gene_set_type in type_order
+    ]
+    fig, ax = plt.subplots(figsize=(8.4, 4.7))
+    boxplot = ax.boxplot(
+        groups,
+        showfliers=False,
+        patch_artist=True,
+        widths=0.6,
+        medianprops={"color": "black", "lw": 1.5},
+    )
+    for patch, color in zip(
+        boxplot["boxes"],
+        [teal, "#c7c7c7", "#c7c7c7", orange, orange],
+        strict=True,
+    ):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.85)
+    jitter_rng = np.random.default_rng(0)
+    for position, values in enumerate(groups, start=1):
+        ax.scatter(
+            jitter_rng.normal(position, 0.05, size=len(values)),
+            values,
+            s=6,
+            color="#333333",
+            alpha=0.25,
+            zorder=3,
+        )
+    ax.axhline(threshold, ls="--", color="#999999", lw=1, label="Decision threshold (0.5)")
+    ax.set_xticks(range(1, len(type_order) + 1))
+    ax.set_xticklabels([display_names[key] for key in type_order], fontsize=9)
+    ax.set_ylabel("Model score")
+    ax.set_ylim(-0.03, 1.03)
+    ax.set_title("Held-out score distribution by gene-set type", fontweight="bold")
+    ax.legend(loc="upper right", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "FigG_score_by_type.png", dpi=220)
+    plt.close(fig)
+
+    manifest = {
+        "source": "reference XGBoost scores from run_main_benchmark",
+        "threshold": threshold,
+        "primary_ratio": f"1:{context.ratio}",
+        "n_test": len(y_true),
+        "selected_go_sha256": stable_json_sha256(context.selected_go),
+        "test_auroc": auroc,
+        "test_auprc": auprc,
+        "confusion_at_threshold": confusion_row,
+        "figures": ["FigC_roc_pr.png", "FigF_confusion.png", "FigG_score_by_type.png"],
+        "tables": [
+            "heldout_predictions.csv",
+            "heldout_confusion_matrix.csv",
+            "heldout_score_by_type.csv",
+            "heldout_negative_type_performance.csv",
+        ],
+    }
+    save_json(OUT_DIR / "heldout_diagnostics_manifest.json", manifest)
+    return manifest
 
 
 def build_cv_fold_datasets(
@@ -1980,6 +2216,7 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
     factories = reference_model_factories(fast)
     rows = []
     fitted: Dict[str, Any] = {}
+    heldout_scores: Dict[str, np.ndarray] = {}
     for name, factory in factories.items():
         t0 = time.time()
         cv_mean, cv_sd = cv_auroc_from_folds(factory, folds)
@@ -1999,6 +2236,7 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         row.update(metrics_from_scores(context.y_test, scores))
         rows.append(row)
         fitted[name] = model
+        heldout_scores[name] = np.asarray(scores, dtype=float)
 
     save_table_aliases(rows, "main_benchmark.csv", "table_main_benchmark.csv")
     latex_df = pd.DataFrame(rows)[
@@ -2011,6 +2249,7 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         "Main held-out benchmark.",
         "tab:main_benchmark_recomputed",
     )
+    save_heldout_diagnostics(context, heldout_scores["XGBoost"])
     return {
         "rows": rows,
         "X_train": context.X_train,
@@ -2020,6 +2259,7 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         "train_records": context.train_records,
         "test_records": context.test_records,
         "models": fitted,
+        "heldout_scores": heldout_scores,
     }
 
 
@@ -2533,89 +2773,6 @@ def run_ablation(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> 
     return rows
 
 
-def run_lofo(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> List[Dict[str, Any]]:
-    """Leave-One-Family-Out (LOFO) validation across all biological families.
-
-    For each family: train on all other families, test on the held-out family.
-    Negative samples are generated independently for train and test to prevent
-    leakage.  Produces table_lofo.csv and Fig6_lofo.png.
-    """
-    positives = pathway_records(bundle)
-    families = sorted(set(r["family"] for r in positives))
-    rows = []
-    for fam in families:
-        test_pos = [r for r in positives if r["family"] == fam]
-        train_pos = [r for r in positives if r["family"] != fam]
-        if len(test_pos) < 2 or len(train_pos) < 20:
-            continue
-        # LOFO uses family-specific pathway splits, while retaining the 60 GO
-        # terms selected on the primary training set.  It is therefore a
-        # family-held-out analysis under a fixed representation, not nested
-        # feature selection within each family fold.
-        train_records = build_side_records(
-            train_pos,
-            bundle,
-            ratio=context.ratio,
-            negative_seed=SEED + 100,
-            prefix=f"LOFO_{fam}_TRAIN",
-        )
-        test_records = build_side_records(
-            test_pos,
-            bundle,
-            ratio=context.ratio,
-            negative_seed=SEED + 200,
-            prefix=f"LOFO_{fam}_TEST",
-        )
-        assert_source_isolation(train_pos, test_pos, train_records, test_records)
-        X_tr, y_tr = records_to_matrix(train_records, context.selected_go, bundle.gene_go)
-        X_te, y_te = records_to_matrix(test_records, context.selected_go, bundle.gene_go)
-        spw = scale_pos_weight_from_labels(y_tr, "lofo", {"held_out_family": fam})
-        model = xgb_model(scale_pos_weight=spw, fast=fast)
-        model.fit(X_tr, y_tr)
-        scores = predict_scores(model, X_te)
-        row = {
-            "held_out_family": fam,
-            "primary_ratio": f"1:{context.ratio}",
-            "n_train_pos": len(train_pos),
-            "n_test_pos": len(test_pos),
-            "n_test_neg": int((y_te == 0).sum()),
-            "median_size": float(np.median([len(r["genes"]) for r in test_pos])),
-            "scale_pos_weight": spw,
-            "feature_selection_protocol": "fixed_primary_training_selected",
-            "nested_feature_selection": False,
-            "cross_split_source_leakage_count": 0,
-        }
-        row.update(metrics_from_scores(y_te, scores))
-        rows.append(row)
-    rows = sorted(rows, key=lambda r: r["test_auroc"], reverse=True)
-    save_table_aliases(rows, "lofo.csv", "table_lofo.csv")
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    axes[0].barh([r["held_out_family"] for r in rows[::-1]], [r["n_test_pos"] for r in rows[::-1]], color="#bab0ab")
-    axes[0].set_xlabel("Held-out positive pathways")
-    axes[0].set_title("LOFO family size")
-    axes[1].barh([r["held_out_family"] for r in rows[::-1]], [r["test_auroc"] for r in rows[::-1]], color="#f28e2b")
-    axes[1].axvline(0.5, color="black", linestyle="--", linewidth=1)
-    axes[1].set_xlabel("Test AUROC")
-    axes[1].set_title("LOFO generalisation")
-    fig.tight_layout()
-    fig.savefig(FIG_DIR / "lofo.png", dpi=220)
-    fig.savefig(FIG_DIR / "Fig6_lofo.png", dpi=220)
-    plt.close(fig)
-
-    latex_df = pd.DataFrame(rows)[
-        ["held_out_family", "n_test_pos", "median_size", "test_auroc", "test_auprc", "f1", "precision", "recall"]
-    ].copy()
-    latex_df.columns = ["Family", "$n$ pathways", "Median size", "AUROC", "AUPRC", "F1", "Precision", "Recall"]
-    write_latex_tabular(
-        LATEX_TABLE_DIR / "table_lofo.tex",
-        latex_df,
-        "Leave-one-family-out generalisation.",
-        "tab:lofo_recomputed",
-    )
-    return rows
-
-
 def run_importance(
     bundle: DatasetBundle,
     context: PrimaryContext,
@@ -2717,7 +2874,6 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
     ]:
         positives = [record for record in records if int(record["label"]) == 1]
         negatives = [record for record in records if int(record["label"]) == 0]
-        cross_negatives = [record for record in negatives if record["negative_type"] == "cross_pathway"]
         source_leakage_count = 0
         for record in negatives:
             source_ids = {str(source_id) for source_id in record.get("source_pathway_ids", [])}
@@ -2732,10 +2888,8 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
                         "annotated_gene_count", len(record["genes"])
                     ),
                     "source_pathway_ids": ";".join(record.get("source_pathway_ids", [])),
-                    "source_families": ";".join(record.get("source_families", [])),
                     "source_overlap_count": record.get("source_overlap_count", 0),
                     "source_overlap_fraction": record.get("source_overlap_fraction", 0.0),
-                    "cross_same_family": record.get("cross_same_family", False),
                     "generation_seed": record.get("generation_seed"),
                     "generation_attempt": record.get("generation_attempt"),
                     "source_raw_gene_count": record.get("source_raw_gene_count", 0),
@@ -2759,12 +2913,6 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
                 "n_shuffled": type_counts.get("shuffled", 0),
                 "n_partial_50_80": type_counts.get("partial_50_80", 0),
                 "n_cross_pathway": type_counts.get("cross_pathway", 0),
-                "cross_same_family_count": sum(bool(record.get("cross_same_family")) for record in cross_negatives),
-                "cross_same_family_fraction": (
-                    float(np.mean([bool(record.get("cross_same_family")) for record in cross_negatives]))
-                    if cross_negatives
-                    else 0.0
-                ),
                 "cross_split_source_leakage_count": source_leakage_count,
                 "records_sha256": stable_json_sha256([(record["id"], record["genes"]) for record in records]),
                 "selected_go_sha256": selected_go_sha256,
@@ -2784,7 +2932,7 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
     save_json(DATA_DIR / "pathway_source_records.json", bundle.source_pathways)
     save_json(DATA_DIR / "pathway_gene_set_groups.json", bundle.pathways)
     save_table(TABLE_DIR / "pathway_duplicate_groups.csv", bundle.duplicate_groups)
-    save_table(TABLE_DIR / "pathway_mixed_metadata_groups.csv", bundle.mixed_metadata_groups)
+    save_table(TABLE_DIR / "pathway_mixed_source_groups.csv", bundle.mixed_source_groups)
     save_table(TABLE_DIR / "pathway_grouping_summary.csv", [bundle.grouping_summary])
     save_json(DATA_DIR / "gene_go.json", {k: sorted(v) for k, v in bundle.gene_go.items()})
     save_json(DATA_DIR / "go_term_names.json", bundle.go_term_names)
@@ -2807,14 +2955,12 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
             "id": r["id"],
             "name": r["name"],
             "source": r["source"],
-            "family": r["family"],
             "raw_gene_count": r["raw_gene_count"],
             "annotated_gene_count": r["annotated_gene_count"],
             "gene_set_group_id": r["gene_set_group_id"],
             "gene_set_sha256": r["gene_set_sha256"],
             "source_record_count": r["source_record_count"],
             "mixed_source": r["mixed_source"],
-            "mixed_family": r["mixed_family"],
         }
         for r in pathway_records(bundle)
     ]
@@ -2826,7 +2972,6 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
                 "pathway_id": pathway_id,
                 "pathway_name": info.get("name", pathway_id),
                 "source": info.get("source", ""),
-                "family": info.get("family", ""),
                 "raw_gene_count": len(info["genes"]),
                 "gene_set_sha256": gene_set_sha256(info["genes"]),
             }
@@ -2850,7 +2995,6 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
         "n_exact_duplicate_groups": bundle.grouping_summary.get("exact_duplicate_group_count", 0),
         "n_collapsed_extra_records": bundle.grouping_summary.get("collapsed_extra_record_count", 0),
         "n_mixed_source_groups": bundle.grouping_summary.get("mixed_source_group_count", 0),
-        "n_mixed_family_groups": bundle.grouping_summary.get("mixed_family_group_count", 0),
         "n_gene_go": len(bundle.gene_go),
         "n_raw_go_terms": len(bundle.go_genes),
         "n_selected_go": len(bundle.selected_go),
@@ -2902,10 +3046,16 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
     axes[1].hist(df["raw_gene_count"], bins=30, color="#f28e2b", edgecolor="white")
     axes[1].set_title("Gene-set size distribution")
     axes[1].set_xlabel("Genes per modelling group")
-    fam_counts = df["family"].value_counts().head(10).sort_values()
-    axes[2].barh(fam_counts.index, fam_counts.values, color="#bab0ab")
-    axes[2].set_title("Top pathway families")
-    axes[2].set_xlabel("Pathways")
+    grouping_labels = ["Source records", "Modelling groups", "Duplicate groups"]
+    grouping_values = [
+        summary["n_pathway_source_records"],
+        summary["n_modelling_groups"],
+        summary["n_exact_duplicate_groups"],
+    ]
+    axes[2].bar(grouping_labels, grouping_values, color=["#bab0ab", "#76b7b2", "#e15759"])
+    axes[2].set_title("Exact gene-set grouping")
+    axes[2].set_ylabel("Count")
+    axes[2].tick_params(axis="x", rotation=20)
     fig.tight_layout()
     fig.savefig(FIG_DIR / "dataset_statistics.png", dpi=220)
     fig.savefig(FIG_DIR / "Fig5_datastats.png", dpi=220)
@@ -3035,7 +3185,7 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
 
 def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> List[Dict[str, Any]]:
     """Record the actual validation protocol used by each analysis section."""
-    full_sections = ["main", "ratio", "models", "ablation", "lofo", "importance"]
+    full_sections = ["main", "ratio", "models", "ablation", "importance"]
     section_set = set(full_sections if "all" in sections else sections)
     cv_splits = 3 if args.quick else 5
     cv_repeats = 1 if args.quick else 3
@@ -3100,21 +3250,6 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
                 "output_table": "tables/ablation.csv",
             }
         )
-    if "lofo" in section_set:
-        rows.append(
-            {
-                "analysis_name": "leave_one_family_out",
-                "run_mode": run_mode_from_args(args),
-                "model_comparison_protocol": "",
-                "n_splits": "",
-                "n_repeats": "",
-                "total_folds": "",
-                "random_state": "42+100 train negatives; 42+200 test negatives",
-                "metric_reported": "family-held-out AUROC/AUPRC/F1/precision/recall",
-                "error_term_type": "NA",
-                "output_table": "tables/lofo.csv",
-            }
-        )
     if "importance" in section_set:
         rows.append(
             {
@@ -3152,10 +3287,13 @@ def save_result_summary(
     table_counts: Dict[str, int] = {}
     for name in [
         "main_benchmark.csv",
+        "heldout_predictions.csv",
+        "heldout_confusion_matrix.csv",
+        "heldout_score_by_type.csv",
+        "heldout_negative_type_performance.csv",
         "model_comparison.csv",
         "ratio_sensitivity.csv",
         "ablation.csv",
-        "lofo.csv",
         "feature_importance.csv",
     ]:
         path = TABLE_DIR / name
@@ -3248,12 +3386,21 @@ def save_manifest(
     manifest_args["raw_dir"] = project_relative_path(Path(args.raw_dir))
     manifest_args["out_dir"] = project_relative_path(Path(args.out_dir))
 
+    is_paper_result = (
+        not args.quick
+        and context.ratio == DEFAULT_PRIMARY_RATIO
+        and OUT_DIR.resolve() == (ROOT / "generated").resolve()
+    )
     manifest = {
         "args": manifest_args,
         "run_mode": run_mode,
         "quick": bool(args.quick),
-        "paper_result": False,
-        "candidate_result": not bool(args.quick) and context.ratio == DEFAULT_PRIMARY_RATIO,
+        "paper_result": is_paper_result,
+        "candidate_result": (
+            not bool(args.quick)
+            and context.ratio == DEFAULT_PRIMARY_RATIO
+            and not is_paper_result
+        ),
         "formal_full_run": not bool(args.quick),
         "comparison_run": context.ratio != DEFAULT_PRIMARY_RATIO,
         "primary_ratio": f"1:{context.ratio}",
@@ -3269,7 +3416,6 @@ def save_manifest(
         "primary_split_unit": "unique_exact_gene_set_group",
         "primary_split_stratification": "database_source",
         "negative_source_isolation": True,
-        "lofo_nested_feature_selection": False,
         "ratio_cv_nested_feature_selection": True,
         "preselected_primary_ratio": "1:1",
         "pathway_grouping": bundle.grouping_summary,
@@ -3315,10 +3461,15 @@ def save_manifest(
             "The 60 GO terms are selected only from the primary outer-training records.",
             "Ratio comparison repeats variance and mutual-information selection inside each fold training side.",
             "Source-derived negative controls are generated independently on each split side.",
-            "LOFO uses the fixed primary training-selected representation and is not nested feature selection.",
             "The supplementary 13-model comparison uses the common held-out split.",
         ],
         "paper_output_map": {
+            "heldout_reference_diagnostics": (
+                "tables/heldout_predictions.csv, tables/heldout_confusion_matrix.csv, "
+                "tables/heldout_score_by_type.csv, tables/heldout_negative_type_performance.csv, "
+                "figures/FigC_roc_pr.png, figures/FigF_confusion.png, and "
+                "figures/FigG_score_by_type.png"
+            ),
             "dataset_statistics": "figures/Fig5_datastats.png and tables/dataset_summary.csv",
             "kegg_pathway_filter": (
                 "tables/kegg_pathway_filter_audit.csv and "
@@ -3329,7 +3480,6 @@ def save_manifest(
                 "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, "
                 "data/ratio_cv_manifest.json, and figures/Fig7_robustness.png"
             ),
-            "lofo": "tables/table_lofo.csv and figures/Fig6_lofo.png",
             "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
             "feature_importance": "tables/table_top_features.csv and figures/Fig3_shap.png",
             "primary_split_audit": "tables/main_split_audit.csv and data/main_split.json",
@@ -3405,14 +3555,6 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
                 if metric in old_row and metric in new_row:
                     add(table_name.removesuffix(".csv"), f"{identifier} {metric}", old_row[metric], new_row[metric])
 
-    old_lofo = old_dir / "tables" / "lofo.csv"
-    new_lofo = TABLE_DIR / "lofo.csv"
-    if old_lofo.exists() and new_lofo.exists():
-        old_df, new_df = pd.read_csv(old_lofo), pd.read_csv(new_lofo)
-        add("lofo", "reported families", len(old_df), len(new_df))
-        for metric in ["test_auroc", "test_auprc", "f1"]:
-            add("lofo", f"mean {metric}", old_df[metric].mean(), new_df[metric].mean())
-
     old_importance = old_dir / "tables" / "feature_importance.csv"
     new_importance = TABLE_DIR / "feature_importance.csv"
     if old_importance.exists() and new_importance.exists():
@@ -3464,7 +3606,6 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
         f"- Exact duplicate groups: {bundle.grouping_summary.get('exact_duplicate_group_count', 0)}",
         f"- Collapsed extra records: {bundle.grouping_summary.get('collapsed_extra_record_count', 0)}",
         f"- Mixed-source groups: {bundle.grouping_summary.get('mixed_source_group_count', 0)}",
-        f"- Mixed-family groups using the representative-family LOFO rule: {bundle.grouping_summary.get('mixed_family_group_count', 0)}",
         "",
         "Numeric differences are listed in tables/old_vs_candidate_comparison.csv. Negative-set differences are listed in tables/negative_distribution_comparison.csv.",
         "Normalized AUPRC corrects its random baseline but is not completely invariant to class prevalence.",
@@ -3481,8 +3622,8 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
         "- Main benchmark, confusion matrix, score-by-negative-type, and model-comparison metrics.",
         "- Ratio protocol: outer-training nested CV; outer test evaluated only for preselected 1:1.",
         "- Ratio table and figure, including normalized-AUPRC caveat.",
-        "- Ablation, feature-importance, and LOFO results.",
-        "- LOFO limitation for mixed-family groups represented by one compatibility family.",
+        "- Ablation and feature-importance results.",
+        "- Remove heuristic pathway-category labels and their held-out analysis from the manuscript.",
     ]
     (OUT_DIR / "paper_sync_checklist.txt").write_text("\n".join(checklist) + "\n", encoding="utf-8")
 
@@ -3513,6 +3654,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         return
 
     ensure_dirs()
+    remove_obsolete_analysis_outputs()
     if args.dataset_source == "cached":
         print("Loading cached manuscript dataset from data_robustness/ ...", flush=True)
         bundle = load_cached_bundle()
@@ -3532,7 +3674,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     sections = args.sections
     if "all" in sections:
-        sections = ["main", "ratio", "models", "ablation", "lofo", "importance"]
+        sections = ["main", "ratio", "models", "ablation", "importance"]
 
     main_result = None
     if any(s in sections for s in ("main", "importance")):
@@ -3552,10 +3694,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
         print("Running feature ablation ...", flush=True)
         run_ablation(bundle, context, fast=args.quick)
         gc.collect()
-    if "lofo" in sections:
-        print("Running leave-one-family-out validation ...", flush=True)
-        run_lofo(bundle, context, fast=args.quick)
-        gc.collect()
     if "importance" in sections and main_result is not None:
         print("Running SHAP/model-importance summary ...", flush=True)
         xgb = main_result["models"]["XGBoost"]
@@ -3574,10 +3712,11 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
     """
     configure_output_dir(args.out_dir)
     ensure_dirs()
+    remove_obsolete_analysis_outputs()
     chunks = [
         ["main", "ratio", "importance"],
         ["models"],
-        ["ablation", "lofo"],
+        ["ablation"],
     ]
     env = os.environ.copy()
     env["PATHWAYML_CHILD"] = "1"
@@ -3614,7 +3753,7 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
         args,
         bundle,
         context,
-        ["main", "ratio", "models", "ablation", "lofo", "importance"],
+        ["main", "ratio", "models", "ablation", "importance"],
     )
     save_old_vs_candidate_comparison(bundle, context)
     print(f"\nDone. Outputs written to {OUT_DIR}")
@@ -3631,6 +3770,7 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
     """
     configure_output_dir(args.out_dir)
     ensure_dirs()
+    remove_obsolete_analysis_outputs()
     sections = list(args.sections)
     chunks = []
     non_model = [s for s in sections if s != "models"]
@@ -3704,7 +3844,7 @@ def parse_args() -> argparse.Namespace:
         "--sections",
         nargs="+",
         default=["all"],
-        choices=["all", "main", "ratio", "models", "ablation", "lofo", "importance"],
+        choices=["all", "main", "ratio", "models", "ablation", "importance"],
         help="Analyses to run.",
     )
     parser.add_argument("--quick", action="store_true", help="Use faster models/CV for fast validation runs.")
@@ -3713,7 +3853,7 @@ def parse_args() -> argparse.Namespace:
     if args.full:
         args.quick = False
     if args.primary_ratio == DEFAULT_PRIMARY_RATIO:
-        default_out = Path("/tmp/pathwayml_grouped_cv_quick") if args.quick else ROOT / "generated_grouped_cv_candidate"
+        default_out = Path("/tmp/pathwayml_grouped_cv_quick") if args.quick else ROOT / "generated"
     else:
         name = f"generated_grouped_cv_ratio_1_{args.primary_ratio}" + ("_quick" if args.quick else "")
         default_out = ROOT / name
