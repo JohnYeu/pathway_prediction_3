@@ -1,16 +1,16 @@
 \begin{table}[htbp]
 \centering
-\caption{Negative-sampling ratio sensitivity under the fixed primary feature representation.}
+\caption{Training-only nested cross-validation across positive-to-negative ratios.}
 \label{tab:robustness_recomputed}
-\begin{tabular}{lrrrrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
-Ratio & \$n\_+\$ & \$n\_-\$ & CV AUROC & Test AUROC & AUPRC & F1 & Precision & Recall \\
+Ratio & Folds & AUROC & AUROC SD & Normalized AUPRC & AUPRC SD & F1 \\
 \midrule
-1:1 & 538 & 538 & 0.863 & 0.842 & 0.807 & 0.802 & 0.750 & 0.861 \\
-1:2 & 538 & 1076 & 0.872 & 0.858 & 0.712 & 0.697 & 0.625 & 0.787 \\
-1:3 & 538 & 1614 & 0.877 & 0.866 & 0.642 & 0.638 & 0.555 & 0.750 \\
-1:4 & 538 & 2152 & 0.876 & 0.866 & 0.592 & 0.572 & 0.478 & 0.713 \\
-1:5 & 538 & 2690 & 0.876 & 0.877 & 0.565 & 0.556 & 0.456 & 0.713 \\
+1:1 & 15 & 0.837 & 0.029 & 0.568 & 0.077 & 0.785 \\
+1:2 & 15 & 0.831 & 0.017 & 0.470 & 0.061 & 0.662 \\
+1:3 & 15 & 0.841 & 0.018 & 0.431 & 0.076 & 0.610 \\
+1:4 & 15 & 0.845 & 0.014 & 0.388 & 0.060 & 0.551 \\
+1:5 & 15 & 0.848 & 0.009 & 0.353 & 0.044 & 0.514 \\
 \bottomrule
 \end{tabular}
 

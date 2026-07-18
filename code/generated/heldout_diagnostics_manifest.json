@@ -1,0 +1,31 @@
+{
+  "confusion_at_threshold": {
+    "f1": 0.8090909090909091,
+    "false_negative": 14,
+    "false_positive": 28,
+    "n_test": 206,
+    "precision": 0.7606837606837606,
+    "recall": 0.8640776699029126,
+    "threshold": 0.5,
+    "true_negative": 75,
+    "true_positive": 89
+  },
+  "figures": [
+    "FigC_roc_pr.png",
+    "FigF_confusion.png",
+    "FigG_score_by_type.png"
+  ],
+  "n_test": 206,
+  "primary_ratio": "1:1",
+  "selected_go_sha256": "d832338fd932d1c78547f031acb30cc4ab7ff678230ccb5e3420815818fc2437",
+  "source": "reference XGBoost scores from run_main_benchmark",
+  "tables": [
+    "heldout_predictions.csv",
+    "heldout_confusion_matrix.csv",
+    "heldout_score_by_type.csv",
+    "heldout_negative_type_performance.csv"
+  ],
+  "test_auprc": 0.8426952532797765,
+  "test_auroc": 0.8739749269488171,
+  "threshold": 0.5
+}

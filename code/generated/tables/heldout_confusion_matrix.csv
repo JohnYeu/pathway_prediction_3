@@ -1,0 +1,2 @@
+threshold,true_negative,false_positive,false_negative,true_positive,n_test,precision,recall,f1
+0.5,75,28,14,89,206,0.7606837606837606,0.8640776699029126,0.8090909090909091

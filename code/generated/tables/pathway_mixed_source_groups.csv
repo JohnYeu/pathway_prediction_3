@@ -1,0 +1,2 @@
+gene_set_group_id,representative_pathway_id,mixed_source,source_pathway_ids,source_databases
+GSG_4c104acacacccd48,ath00543,True,AC_PWY-6936;ath00543,AraCyc;KEGG
