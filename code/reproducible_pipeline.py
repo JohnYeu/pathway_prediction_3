@@ -48,7 +48,7 @@ import sys
 import time
 import warnings
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from itertools import combinations
 from pathlib import Path
@@ -57,6 +57,10 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping,
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+import matplotlib
+
+# Headless rendering avoids macOS GUI-backend failures in child processes.
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -131,7 +135,7 @@ PRIMARY_TRAIN_NEGATIVE_SEED = SEED + 100
 PRIMARY_TEST_NEGATIVE_SEED = SEED + 200
 CV_REPEAT_SEEDS = (42, 7, 13)
 NEGATIVE_SCHEME = "four_type_random_shuffled_partial_cross"
-GO_SELECTION_MODE = "primary_train_fixed60"
+GO_SELECTION_MODE = "outer_train_fixed60_with_nested_ratio_cv"
 MODEL_COMPARISON_PROTOCOL = "heldout_only"
 SCALE_POS_WEIGHT_RULE = "dynamic_n_negative_train_over_n_positive_train"
 SCALE_POS_WEIGHT_LOG: List[Dict[str, Any]] = []
@@ -169,6 +173,7 @@ class DatasetBundle:
     """
 
     pathways: Dict[str, Dict[str, Any]]
+    source_pathways: Dict[str, Dict[str, Any]]
     gene_go: Dict[str, set]
     go_genes: Dict[str, set]
     go_term_names: Dict[str, str]
@@ -176,6 +181,9 @@ class DatasetBundle:
     feature_names: List[str]
     feature_stages: Dict[str, int]
     source: str
+    grouping_summary: Dict[str, Any] = field(default_factory=dict)
+    duplicate_groups: List[Dict[str, Any]] = field(default_factory=list)
+    mixed_metadata_groups: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -194,6 +202,12 @@ class NegativeSample:
     source_overlap_count: int
     source_overlap_fraction: float
     generation_seed: int
+    raw_gene_count: int
+    annotated_gene_count: int
+    source_raw_gene_count: int
+    source_annotated_gene_count: int
+    retention_fraction: float | None
+    generation_attempt: int
 
 
 @dataclass
@@ -222,11 +236,12 @@ class PrimaryContext:
     split_seed: int = SEED
     train_negative_seed: int = PRIMARY_TRAIN_NEGATIVE_SEED
     test_negative_seed: int = PRIMARY_TEST_NEGATIVE_SEED
+    cv_folds_by_ratio: Dict[int, List["CVFoldData"]] = field(default_factory=dict)
 
 
 @dataclass
 class CVFoldData:
-    """A source-isolated CV fold under the fixed primary feature set."""
+    """A source-isolated CV fold with feature selection fit on fold training."""
 
     repeat_index: int
     fold_index: int
@@ -234,8 +249,13 @@ class CVFoldData:
     ratio: int
     train_negative_seed: int
     validation_negative_seed: int
+    feature_selection_seed: int
+    model_seed: int
     train_positive_ids: List[str]
     validation_positive_ids: List[str]
+    selected_go: List[str]
+    selected_go_sha256: str
+    feature_selection_stages: Dict[str, int]
     X_train: np.ndarray
     y_train: np.ndarray
     X_validation: np.ndarray
@@ -790,7 +810,7 @@ def aracyc_family(name: str) -> str:
 
 
 def build_raw_pathways(raw_dir: Path) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
-    """Merge KEGG and AraCyc pathways from raw files into a unified dict.
+    """Merge KEGG and AraCyc source records into a unified dictionary.
 
     Applies the MIN_PATHWAY_GENES filter (>=5 genes) and assigns biological
     family labels needed for LOFO validation.  AraCyc pathway IDs are prefixed
@@ -831,6 +851,110 @@ def build_raw_pathways(raw_dir: Path) -> Tuple[Dict[str, Dict[str, Any]], Dict[s
         "raw_aracyc_stats": aracyc_stats,
     }
     return pathways, stats
+
+
+def gene_set_sha256(genes: Sequence[str]) -> str:
+    """Return a stable hash for a normalized, internally unique gene set."""
+    normalized = sorted({normalize_gene(gene) for gene in genes if normalize_gene(gene)})
+    payload = json.dumps(normalized, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def group_identical_gene_sets(
+    source_pathways: Mapping[str, Mapping[str, Any]],
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Collapse exact gene-set duplicates into one modelling instance.
+
+    The source database records are not deleted.  Each modelling instance keeps
+    every source ID and name as provenance.  Grouping only prevents an identical
+    input vector from being weighted more than once or split across train/test.
+    It does not assert that aliased records have the same biological meaning.
+    """
+    buckets: Dict[Tuple[str, ...], List[Tuple[str, Mapping[str, Any]]]] = defaultdict(list)
+    for pathway_id, info in sorted(source_pathways.items()):
+        genes = tuple(sorted({normalize_gene(gene) for gene in info["genes"] if normalize_gene(gene)}))
+        if len(genes) >= MIN_PATHWAY_GENES:
+            buckets[genes].append((str(pathway_id), info))
+
+    groups: Dict[str, Dict[str, Any]] = {}
+    duplicate_rows: List[Dict[str, Any]] = []
+    mixed_rows: List[Dict[str, Any]] = []
+    for genes, members in sorted(buckets.items(), key=lambda item: item[0]):
+        kegg_ids = sorted(pathway_id for pathway_id, info in members if info.get("source") == "KEGG")
+        representative_id = kegg_ids[0] if kegg_ids else min(pathway_id for pathway_id, _ in members)
+        representative_info = next(info for pathway_id, info in members if pathway_id == representative_id)
+        digest = gene_set_sha256(genes)
+        group_id = f"GSG_{digest[:16]}"
+        pathway_ids = [pathway_id for pathway_id, _ in sorted(members)]
+        names = [str(info.get("name", pathway_id)) for pathway_id, info in sorted(members)]
+        sources = [str(info.get("source", "")) for _, info in sorted(members)]
+        families = [str(info.get("family", "")) for _, info in sorted(members)]
+        unique_sources = sorted(set(sources))
+        unique_families = sorted(set(families))
+        group = {
+            "name": representative_info.get("name", representative_id),
+            "genes": list(genes),
+            "source": representative_info.get("source", ""),
+            "family": representative_info.get("family", ""),
+            "representative_pathway_id": representative_id,
+            "gene_set_group_id": group_id,
+            "gene_set_sha256": digest,
+            "source_pathway_ids": pathway_ids,
+            "source_pathway_names": names,
+            "source_databases": sources,
+            "source_families": families,
+            "source_record_count": len(members),
+            "database_count": len(unique_sources),
+            "mixed_source": len(unique_sources) > 1,
+            "mixed_family": len(unique_families) > 1,
+            "stratification_source": representative_info.get("source", ""),
+        }
+        groups[representative_id] = group
+
+        if len(members) > 1:
+            duplicate_rows.append(
+                {
+                    "gene_set_group_id": group_id,
+                    "gene_set_sha256": digest,
+                    "representative_pathway_id": representative_id,
+                    "source_record_count": len(members),
+                    "database_count": len(unique_sources),
+                    "source_pathway_ids": ";".join(pathway_ids),
+                    "source_pathway_names": ";".join(names),
+                    "source_databases": ";".join(sources),
+                    "source_families": ";".join(families),
+                    "raw_gene_count": len(genes),
+                }
+            )
+        if group["mixed_source"] or group["mixed_family"]:
+            mixed_rows.append(
+                {
+                    "gene_set_group_id": group_id,
+                    "representative_pathway_id": representative_id,
+                    "mixed_source": group["mixed_source"],
+                    "mixed_family": group["mixed_family"],
+                    "source_pathway_ids": ";".join(pathway_ids),
+                    "source_databases": ";".join(sources),
+                    "source_families": ";".join(families),
+                }
+            )
+
+    source_counts = Counter(str(info.get("source", "")) for info in source_pathways.values())
+    group_strata = Counter(str(info.get("stratification_source", "")) for info in groups.values())
+    summary = {
+        "source_record_count": len(source_pathways),
+        "source_record_kegg": source_counts.get("KEGG", 0),
+        "source_record_aracyc": source_counts.get("AraCyc", 0),
+        "modelling_group_count": len(groups),
+        "modelling_group_kegg_stratum": group_strata.get("KEGG", 0),
+        "modelling_group_aracyc_stratum": group_strata.get("AraCyc", 0),
+        "exact_duplicate_group_count": len(duplicate_rows),
+        "collapsed_extra_record_count": len(source_pathways) - len(groups),
+        "mixed_source_group_count": sum(bool(info["mixed_source"]) for info in groups.values()),
+        "mixed_family_group_count": sum(bool(info["mixed_family"]) for info in groups.values()),
+        "grouping_rule": "exact equality of sorted normalized gene membership",
+    }
+    return groups, summary, duplicate_rows, mixed_rows
 
 
 def save_kegg_filter_audit(raw_dir: Path) -> None:
@@ -899,8 +1023,11 @@ def load_cached_bundle() -> DatasetBundle:
             info.setdefault("family", aracyc_family(info.get("name", pid)))
         info["genes"] = sorted(set(info["genes"]))
 
+    source_pathways = {pid: dict(info) for pid, info in pathways.items()}
+    groups, grouping_summary, duplicate_groups, mixed_groups = group_identical_gene_sets(source_pathways)
     return DatasetBundle(
-        pathways=pathways,
+        pathways=groups,
+        source_pathways=source_pathways,
         gene_go=gene_go,
         go_genes=dict(go_genes),
         go_term_names=json.load((CACHED_DATA_DIR / "go_term_names.json").open(encoding="utf-8"))
@@ -910,6 +1037,9 @@ def load_cached_bundle() -> DatasetBundle:
         feature_names=list(feature_info["feature_names"]),
         feature_stages=dict(feature_info.get("feat_sel_stages", {})),
         source="cached",
+        grouping_summary=grouping_summary,
+        duplicate_groups=duplicate_groups,
+        mixed_metadata_groups=mixed_groups,
     )
 
 
@@ -940,51 +1070,78 @@ def generate_negative_samples(
       2. partial_50_80:    50-80% subsample of a real pathway's genes
       3. cross_pathway:    half from one pathway + half from another
 
-    The random-call order deliberately matches the earlier gene-list-only
-    generator.  Metadata is computed after each draw without touching either
-    RNG, which keeps the established fixed-seed gene sets byte-for-byte stable.
-
-    The definitions are intentionally unchanged: shuffled controls may redraw
-    source genes, and cross-pathway controls are not constrained to different
-    families.  Those properties are recorded for audit rather than silently
-    redefined in this source-isolation change.
+    Every emitted set contains at least five GO-annotated genes.  Cross-pathway
+    controls use two distinct modelling instances.  The source pathways may
+    still belong to the same broad family because functional-family filtering
+    is outside the scope of this benchmark definition.
     """
     rng = random.Random(seed)
-    np_rng = np.random.default_rng(seed)
+    annotated_pool = set(gene_pool)
+    sorted_gene_pool = sorted(annotated_pool)
     pathway_items = [
         (pid, info, list(info["genes"]))
         for pid, info in pathways.items()
         if len(info["genes"]) >= MIN_PATHWAY_GENES
+        and len(set(info["genes"]) & annotated_pool) >= MIN_PATHWAY_GENES
     ]
+    if len(pathway_items) < 2:
+        raise ValueError("At least two pathways with five GO-annotated genes are required.")
+    partial_items = [
+        item
+        for item in pathway_items
+        if math.floor(0.8 * len(item[2])) >= MIN_PATHWAY_GENES
+    ]
+    if not partial_items:
+        raise ValueError("No pathway can produce a valid partial_50_80 control.")
+
     out: List[NegativeSample] = []
     for i in range(n_negatives):
         kind = i % 4
-        if kind == 0:
-            size = rng.randint(5, 30)
-            genes = rng.sample(list(gene_pool), min(size, len(gene_pool)))
-            negative_type = "random_5_30"
-            source_items: List[Tuple[str, Mapping[str, Any], List[str]]] = []
-        elif kind == 1:
-            source_items = [rng.choice(pathway_items)]
-            src = source_items[0][2]
-            genes = rng.sample(list(gene_pool), min(len(src), len(gene_pool)))
-            negative_type = "shuffled"
-        elif kind == 2:
-            source_items = [rng.choice(pathway_items)]
-            src = source_items[0][2]
-            keep = max(3, int(len(src) * np_rng.uniform(0.5, 0.8)))
-            genes = rng.sample(src, min(keep, len(src)))
-            negative_type = "partial_50_80"
-        else:
-            source_items = [rng.choice(pathway_items), rng.choice(pathway_items)]
-            s1 = source_items[0][2]
-            s2 = source_items[1][2]
-            genes = rng.sample(s1, min(max(2, len(s1) // 2), len(s1)))
-            genes += rng.sample(s2, min(max(2, len(s2) // 2), len(s2)))
+        for attempt in range(1, 1001):
+            retention_fraction: float | None = None
+            if kind == 0:
+                size = rng.randint(5, 30)
+                genes = rng.sample(sorted_gene_pool, size)
+                negative_type = "random_5_30"
+                source_items: List[Tuple[str, Mapping[str, Any], List[str]]] = []
+            elif kind == 1:
+                source_items = [rng.choice(pathway_items)]
+                src = source_items[0][2]
+                genes = rng.sample(sorted_gene_pool, len(src))
+                negative_type = "shuffled"
+            elif kind == 2:
+                source_items = [rng.choice(partial_items)]
+                src = source_items[0][2]
+                low = math.ceil(0.5 * len(src))
+                high = math.floor(0.8 * len(src))
+                keep = rng.randint(low, high)
+                genes = rng.sample(src, keep)
+                retention_fraction = keep / len(src)
+                negative_type = "partial_50_80"
+            else:
+                first = rng.choice(pathway_items)
+                second_candidates = [item for item in pathway_items if item[0] != first[0]]
+                second = rng.choice(second_candidates)
+                source_items = [first, second]
+                s1, s2 = first[2], second[2]
+                genes = rng.sample(s1, min(max(2, len(s1) // 2), len(s1)))
+                genes += rng.sample(s2, min(max(2, len(s2) // 2), len(s2)))
+                genes = sorted(set(genes))
+                negative_type = "cross_pathway"
+
             genes = sorted(set(genes))
-            negative_type = "cross_pathway"
+            annotated_count = len(set(genes) & annotated_pool)
+            if annotated_count >= MIN_PATHWAY_GENES:
+                break
+        else:  # pragma: no cover - defensive failure for malformed source data
+            raise RuntimeError(
+                f"Could not generate a valid {negative_type} control after 1000 attempts "
+                f"(seed={seed}, sample_index={i})."
+            )
 
         source_ids = [item[0] for item in source_items]
+        if negative_type == "cross_pathway" and len(set(source_ids)) != 2:
+            raise AssertionError("cross_pathway controls require two distinct source IDs.")
         source_families = [str(item[1].get("family", "")) for item in source_items]
         source_gene_union = set().union(*(set(item[2]) for item in source_items)) if source_items else set()
         overlap_count = len(set(genes) & source_gene_union)
@@ -997,6 +1154,12 @@ def generate_negative_samples(
                 source_overlap_count=overlap_count,
                 source_overlap_fraction=float(overlap_count / len(set(genes))) if genes else 0.0,
                 generation_seed=seed,
+                raw_gene_count=len(genes),
+                annotated_gene_count=annotated_count,
+                source_raw_gene_count=len(source_gene_union),
+                source_annotated_gene_count=len(source_gene_union & annotated_pool),
+                retention_fraction=retention_fraction,
+                generation_attempt=attempt,
             )
         )
     return out
@@ -1024,8 +1187,8 @@ def feature_names_for(selected_go: Sequence[str]) -> List[str]:
         "jaccard_min",
         "jaccard_max",
         "jaccard_std",
-        "pathway_size",
-        "log_size",
+        "annotated_gene_count",
+        "log_annotated_gene_count",
         "go_entropy",
         "go_size_std",
         "mean_go_per_gene",
@@ -1052,13 +1215,17 @@ def select_go_terms_from_records(
     if len(np.unique(labels)) != 2:
         raise ValueError("GO feature selection requires both positive and negative training records.")
 
+    term_index = {term: index for index, term in enumerate(freq_terms)}
     X = np.zeros((len(records), len(freq_terms)), dtype=np.float32)
     for i, record in enumerate(records):
         genes = record["genes"]
         valid = [g for g in genes if g in gene_go]
         denom = max(len(valid), 1)
-        for j, term in enumerate(freq_terms):
-            X[i, j] = sum(1 for g in valid if term in gene_go[g]) / denom
+        counts: Counter[str] = Counter()
+        for gene in valid:
+            counts.update(term for term in gene_go[gene] if term in term_index)
+        for term, count in counts.items():
+            X[i, term_index[term]] = count / denom
 
     variances = X.var(axis=0)
     cutoff = np.percentile(variances, 15)
@@ -1072,7 +1239,10 @@ def select_go_terms_from_records(
         ranked_indices = np.arange(len(variance_terms))
     else:
         mi_scores = mutual_info_classif(X_var, labels, random_state=seed)
-        ranked_indices = np.argsort(mi_scores)[::-1]
+        ranked_indices = np.asarray(
+            sorted(range(len(variance_terms)), key=lambda idx: (-float(mi_scores[idx]), variance_terms[idx])),
+            dtype=int,
+        )
         selected = [variance_terms[i] for i in ranked_indices[:k]]
 
     rank_by_term = {variance_terms[idx]: rank for rank, idx in enumerate(ranked_indices, 1)}
@@ -1112,11 +1282,25 @@ def load_raw_bundle(raw_dir: Path) -> DatasetBundle:
     """
     raw_dir = Path(raw_dir)
     gene_go, go_genes, go_term_names, go_stats = parse_ath_go_goslim(raw_dir / "ATH_GO_GOSLIM.txt")
-    pathways, raw_stats = build_raw_pathways(raw_dir)
+    source_pathways, raw_stats = build_raw_pathways(raw_dir)
+    pathways, grouping_summary, duplicate_groups, mixed_groups = group_identical_gene_sets(source_pathways)
     stages = {"raw": len(go_genes)}
     stages.update({f"raw_pathway_stat_{k}": v for k, v in raw_stats.items() if isinstance(v, int)})
     stages.update({f"raw_go_stat_{k}": v for k, v in go_stats.items() if isinstance(v, int)})
-    return DatasetBundle(pathways, gene_go, go_genes, go_term_names, [], [], stages, source="raw")
+    return DatasetBundle(
+        pathways=pathways,
+        source_pathways=source_pathways,
+        gene_go=gene_go,
+        go_genes=go_genes,
+        go_term_names=go_term_names,
+        selected_go=[],
+        feature_names=[],
+        feature_stages=stages,
+        source="raw",
+        grouping_summary=grouping_summary,
+        duplicate_groups=duplicate_groups,
+        mixed_metadata_groups=mixed_groups,
+    )
 
 
 def build_feature_vector(genes: Sequence[str], selected_go: Sequence[str], gene_go: Mapping[str, set]) -> np.ndarray:
@@ -1128,8 +1312,8 @@ def build_feature_vector(genes: Sequence[str], selected_go: Sequence[str], gene_
       [61]     jaccard_min:      minimum pairwise Jaccard
       [62]     jaccard_max:      maximum pairwise Jaccard
       [63]     jaccard_std:      standard deviation of pairwise Jaccard
-      [64]     pathway_size:     number of GO-annotated genes
-      [65]     log_size:         log(1 + pathway_size)
+      [64]     annotated_gene_count:     number of genes in G* with GO annotation
+      [65]     log_annotated_gene_count: log(1 + annotated_gene_count)
       [66]     go_entropy:       Shannon entropy of GO frequency distribution
       [67]     go_size_std:      std of per-gene GO annotation counts
       [68]     mean_go_per_gene: mean number of GO terms per gene
@@ -1177,7 +1361,7 @@ def build_feature_vector(genes: Sequence[str], selected_go: Sequence[str], gene_
 
 
 def pathway_records(bundle: DatasetBundle) -> List[Dict[str, Any]]:
-    """Convert bundle pathways to flat record dicts used by dataset construction."""
+    """Convert unique gene-set modelling instances to flat positive records."""
     records = []
     for pid, info in sorted(bundle.pathways.items()):
         genes = sorted(set(info["genes"]))
@@ -1190,7 +1374,21 @@ def pathway_records(bundle: DatasetBundle) -> List[Dict[str, Any]]:
                 "genes": genes,
                 "label": 1,
                 "source": info.get("source", "KEGG" if pid.startswith("ath") else "AraCyc"),
+                "stratification_source": info.get("stratification_source", info.get("source", "")),
                 "family": info.get("family", kegg_family(pid, info.get("name", pid)) if pid.startswith("ath") else aracyc_family(info.get("name", pid))),
+                "gene_set_group_id": info.get("gene_set_group_id", f"GSG_{gene_set_sha256(genes)[:16]}"),
+                "gene_set_sha256": info.get("gene_set_sha256", gene_set_sha256(genes)),
+                "representative_pathway_id": info.get("representative_pathway_id", pid),
+                "source_pathway_ids_all": list(info.get("source_pathway_ids", [pid])),
+                "source_pathway_names_all": list(info.get("source_pathway_names", [info.get("name", pid)])),
+                "source_databases_all": list(info.get("source_databases", [info.get("source", "")])),
+                "source_families_all": list(info.get("source_families", [info.get("family", "")])),
+                "source_record_count": int(info.get("source_record_count", 1)),
+                "database_count": int(info.get("database_count", 1)),
+                "mixed_source": bool(info.get("mixed_source", False)),
+                "mixed_family": bool(info.get("mixed_family", False)),
+                "raw_gene_count": len(genes),
+                "annotated_gene_count": sum(gene in bundle.gene_go for gene in genes),
                 "negative_type": "NA",
                 "source_pathway_ids": [],
                 "source_families": [],
@@ -1208,12 +1406,39 @@ def stable_json_sha256(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def derive_deterministic_seed(
+    master_seed: int,
+    ratio: int,
+    repeat_seed: int,
+    fold_index: int,
+    split_side: str,
+    purpose: str,
+) -> int:
+    """Derive a stable 32-bit seed without depending on loop traversal order."""
+    payload = {
+        "master_seed": int(master_seed),
+        "ratio": int(ratio),
+        "repeat_seed": int(repeat_seed),
+        "fold_index": int(fold_index),
+        "split_side": str(split_side),
+        "purpose": str(purpose),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).digest()
+    return int.from_bytes(digest[:4], byteorder="big", signed=False)
+
+
 def primary_split_sha256(context: PrimaryContext) -> str:
     """Fingerprint the complete canonical split with one shared definition."""
     return stable_json_sha256(
         {
             "train_positive_ids": [record["id"] for record in context.train_positive_records],
             "test_positive_ids": [record["id"] for record in context.test_positive_records],
+            "train_gene_set_group_ids": [record["gene_set_group_id"] for record in context.train_positive_records],
+            "test_gene_set_group_ids": [record["gene_set_group_id"] for record in context.test_positive_records],
+            "train_gene_set_hashes": [record["gene_set_sha256"] for record in context.train_positive_records],
+            "test_gene_set_hashes": [record["gene_set_sha256"] for record in context.test_positive_records],
             "train_records": [(record["id"], record["genes"]) for record in context.train_records],
             "test_records": [(record["id"], record["genes"]) for record in context.test_records],
         }
@@ -1228,6 +1453,8 @@ def pathway_mapping_from_records(records: Sequence[Mapping[str, Any]]) -> Dict[s
             "genes": list(record["genes"]),
             "source": record.get("source", ""),
             "family": record.get("family", ""),
+            "gene_set_group_id": record.get("gene_set_group_id", ""),
+            "source_pathway_ids": list(record.get("source_pathway_ids_all", [record["id"]])),
         }
         for record in records
     }
@@ -1250,6 +1477,13 @@ def negative_sample_record(sample: NegativeSample, sample_id: str) -> Dict[str, 
         "source_overlap_fraction": float(sample.source_overlap_fraction),
         "cross_same_family": bool(same_family),
         "generation_seed": int(sample.generation_seed),
+        "raw_gene_count": int(sample.raw_gene_count),
+        "annotated_gene_count": int(sample.annotated_gene_count),
+        "source_raw_gene_count": int(sample.source_raw_gene_count),
+        "source_annotated_gene_count": int(sample.source_annotated_gene_count),
+        "retention_fraction": sample.retention_fraction,
+        "generation_attempt": int(sample.generation_attempt),
+        "gene_set_sha256": gene_set_sha256(sample.genes),
     }
 
 
@@ -1292,6 +1526,14 @@ def assert_source_isolation(
     test_ids = {str(record["id"]) for record in test_positive_records}
     if train_ids & test_ids:
         raise AssertionError("Positive pathway IDs overlap between train and test.")
+    train_group_ids = {str(record.get("gene_set_group_id", "")) for record in train_positive_records}
+    test_group_ids = {str(record.get("gene_set_group_id", "")) for record in test_positive_records}
+    train_hashes = {str(record.get("gene_set_sha256", gene_set_sha256(record["genes"]))) for record in train_positive_records}
+    test_hashes = {str(record.get("gene_set_sha256", gene_set_sha256(record["genes"]))) for record in test_positive_records}
+    if train_group_ids & test_group_ids:
+        raise AssertionError("Gene-set group IDs overlap between train and test.")
+    if train_hashes & test_hashes:
+        raise AssertionError("Exact gene-set hashes overlap between train and test.")
 
     for split_name, records, allowed, forbidden in [
         ("train", train_records, train_ids, test_ids),
@@ -1320,7 +1562,7 @@ def split_positive_records(
     silent fallback to an unstratified split.
     """
     records = [dict(record) for record in positive_records]
-    sources = [str(record["source"]) for record in records]
+    sources = [str(record.get("stratification_source", record["source"])) for record in records]
     source_counts = Counter(sources)
     too_small = {source: count for source, count in source_counts.items() if count < 2}
     if too_small:
@@ -1410,7 +1652,12 @@ def prepare_primary_context(
     )
 
 
-def xgb_model(scale_pos_weight: float = 2.0, fast: bool = False) -> XGBClassifier:
+def xgb_model(
+    scale_pos_weight: float = 2.0,
+    fast: bool = False,
+    random_state: int = SEED,
+    n_jobs: int = -1,
+) -> XGBClassifier:
     """Create an XGBoost classifier with paper-aligned hyperparameters.
 
     Full mode is the paper configuration and matches the LaTeX/ML notebook
@@ -1431,8 +1678,8 @@ def xgb_model(scale_pos_weight: float = 2.0, fast: bool = False) -> XGBClassifie
         objective="binary:logistic",
         tree_method="hist",
         eval_metric="logloss",
-        random_state=SEED,
-        n_jobs=-1,
+        random_state=random_state,
+        n_jobs=n_jobs,
         verbosity=0,
     )
 
@@ -1468,15 +1715,11 @@ def build_cv_fold_datasets(
     fast: bool,
     analysis_name: str,
 ) -> List[CVFoldData]:
-    """Build source-isolated folds from primary-training positive pathways.
-
-    The canonical 60 GO terms were selected once on the full primary training
-    side.  They remain fixed here, so this is repeated CV under a fixed primary
-    representation, not nested feature selection.  Within that representation,
-    every fold independently generates controls from its own positive pathways.
-    """
+    """Build source-isolated folds with fold-training-only GO selection."""
+    if ratio in context.cv_folds_by_ratio:
+        return context.cv_folds_by_ratio[ratio]
     positives = context.train_positive_records
-    sources = np.asarray([str(record["source"]) for record in positives])
+    sources = np.asarray([str(record.get("stratification_source", record["source"])) for record in positives])
     n_splits = 3 if fast else 5
     repeats = (SEED,) if fast else CV_REPEAT_SEEDS
     source_counts = Counter(sources.tolist())
@@ -1495,9 +1738,18 @@ def build_cv_fold_datasets(
             fold_validation_pos = sorted(
                 (dict(positives[int(i)]) for i in validation_idx), key=lambda record: str(record["id"])
             )
-            base_seed = 100_000 + ratio * 10_000
-            train_seed = base_seed + repeat_index * 100 + fold_index * 2
-            validation_seed = train_seed + 1
+            train_seed = derive_deterministic_seed(
+                SEED, ratio, repeat_seed, fold_index, "train", "negative_generation"
+            )
+            validation_seed = derive_deterministic_seed(
+                SEED, ratio, repeat_seed, fold_index, "validation", "negative_generation"
+            )
+            feature_seed = derive_deterministic_seed(
+                SEED, ratio, repeat_seed, fold_index, "train", "go_selection"
+            )
+            model_seed = derive_deterministic_seed(
+                SEED, ratio, repeat_seed, fold_index, "train", "model_fit"
+            )
             fold_train_records = build_side_records(
                 fold_train_pos,
                 bundle,
@@ -1526,9 +1778,20 @@ def build_cv_fold_datasets(
             if fold_source_ids & outer_test_ids:
                 raise AssertionError("An outer-test pathway was used as a CV negative source.")
 
-            X_train, y_train = records_to_matrix(fold_train_records, context.selected_go, bundle.gene_go)
+            selected_go, selection_stages, _ = select_go_terms_from_records(
+                fold_train_records,
+                bundle.gene_go,
+                bundle.go_genes,
+                seed=feature_seed,
+                k=N_GO_TERMS,
+            )
+            if len(selected_go) != N_GO_TERMS:
+                raise AssertionError(
+                    f"Expected {N_GO_TERMS} fold-selected GO terms, got {len(selected_go)}"
+                )
+            X_train, y_train = records_to_matrix(fold_train_records, selected_go, bundle.gene_go)
             X_validation, y_validation = records_to_matrix(
-                fold_validation_records, context.selected_go, bundle.gene_go
+                fold_validation_records, selected_go, bundle.gene_go
             )
             spw = scale_pos_weight_from_labels(
                 y_train,
@@ -1547,8 +1810,13 @@ def build_cv_fold_datasets(
                     ratio=ratio,
                     train_negative_seed=train_seed,
                     validation_negative_seed=validation_seed,
+                    feature_selection_seed=feature_seed,
+                    model_seed=model_seed,
                     train_positive_ids=[str(record["id"]) for record in fold_train_pos],
                     validation_positive_ids=[str(record["id"]) for record in fold_validation_pos],
+                    selected_go=list(selected_go),
+                    selected_go_sha256=stable_json_sha256(selected_go),
+                    feature_selection_stages=dict(selection_stages),
                     X_train=X_train,
                     y_train=y_train,
                     X_validation=X_validation,
@@ -1558,21 +1826,22 @@ def build_cv_fold_datasets(
                     scale_pos_weight=spw,
                 )
             )
+    context.cv_folds_by_ratio[ratio] = folds
     return folds
 
 
 def cv_auroc_from_folds(
-    model_factory: Callable[[float], Any],
+    model_factory: Callable[[float, int], Any],
     folds: Sequence[CVFoldData],
 ) -> Tuple[float, float]:
     """Evaluate one model on prebuilt folds shared by all reference models."""
     scores: List[float] = []
     for fold in folds:
-        model = model_factory(fold.scale_pos_weight)
+        model = model_factory(fold.scale_pos_weight, fold.model_seed)
         model.fit(fold.X_train, fold.y_train)
         validation_scores = predict_scores(model, fold.X_validation)
         scores.append(roc_auc_score(fold.y_validation, validation_scores))
-    return float(np.mean(scores)), float(np.std(scores))
+    return float(np.mean(scores)), float(np.std(scores, ddof=1)) if len(scores) > 1 else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -1584,19 +1853,21 @@ def cv_auroc_from_folds(
 #   2. save a machine-readable CSV under generated/tables/,
 #   3. when useful, save a paper-facing figure/table fragment.
 #
-def reference_model_factories(fast: bool) -> Dict[str, Callable[[float], Any]]:
+def reference_model_factories(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
     """Return fresh reference-model builders for fold and held-out fitting."""
     return {
-        "XGBoost": lambda spw: xgb_model(scale_pos_weight=spw, fast=fast),
-        "Random Forest": lambda _spw: RandomForestClassifier(
+        "XGBoost": lambda spw, model_seed: xgb_model(
+            scale_pos_weight=spw, fast=fast, random_state=model_seed
+        ),
+        "Random Forest": lambda _spw, model_seed: RandomForestClassifier(
             n_estimators=120 if fast else 500,
             max_depth=10,
             max_features="sqrt",
             class_weight="balanced",
-            random_state=SEED,
+            random_state=model_seed,
             n_jobs=-1,
         ),
-        "Logistic Regression": lambda _spw: Pipeline(
+        "Logistic Regression": lambda _spw, model_seed: Pipeline(
             [
                 ("scaler", StandardScaler()),
                 (
@@ -1605,7 +1876,7 @@ def reference_model_factories(fast: bool) -> Dict[str, Callable[[float], Any]]:
                         solver="lbfgs",
                         max_iter=5000,
                         class_weight="balanced",
-                        random_state=SEED,
+                        random_state=model_seed,
                     ),
                 ),
             ]
@@ -1614,7 +1885,7 @@ def reference_model_factories(fast: bool) -> Dict[str, Callable[[float], Any]]:
 
 
 def save_cv_fold_outputs(folds: Sequence[CVFoldData], context: PrimaryContext) -> None:
-    """Persist primary-CV split metadata without serialising feature matrices."""
+    """Persist nested primary-CV metadata without serialising feature matrices."""
     outer_test_ids = {str(record["id"]) for record in context.test_positive_records}
     audit_rows: List[Dict[str, Any]] = []
     manifest_rows: List[Dict[str, Any]] = []
@@ -1643,7 +1914,11 @@ def save_cv_fold_outputs(folds: Sequence[CVFoldData], context: PrimaryContext) -
                 "n_validation_total": len(fold.y_validation),
                 "train_negative_seed": fold.train_negative_seed,
                 "validation_negative_seed": fold.validation_negative_seed,
+                "feature_selection_seed": fold.feature_selection_seed,
+                "model_seed": fold.model_seed,
                 "scale_pos_weight": fold.scale_pos_weight,
+                "selected_go_sha256": fold.selected_go_sha256,
+                "selected_go_count": len(fold.selected_go),
                 "cross_split_source_leakage_count": leakage_count,
                 "outer_test_source_count": outer_test_source_count,
                 "train_records_sha256": stable_json_sha256(
@@ -1662,8 +1937,13 @@ def save_cv_fold_outputs(folds: Sequence[CVFoldData], context: PrimaryContext) -
                 "ratio": fold.ratio,
                 "train_negative_seed": fold.train_negative_seed,
                 "validation_negative_seed": fold.validation_negative_seed,
+                "feature_selection_seed": fold.feature_selection_seed,
+                "model_seed": fold.model_seed,
                 "train_positive_ids": fold.train_positive_ids,
                 "validation_positive_ids": fold.validation_positive_ids,
+                "selected_go": fold.selected_go,
+                "selected_go_sha256": fold.selected_go_sha256,
+                "feature_selection_stages": fold.feature_selection_stages,
             }
         )
         if leakage_count or outer_test_source_count:
@@ -1672,9 +1952,9 @@ def save_cv_fold_outputs(folds: Sequence[CVFoldData], context: PrimaryContext) -
     save_json(
         DATA_DIR / "cv_fold_manifest.json",
         {
-            "feature_selection_protocol": "fixed_primary_training_selected",
-            "nested_feature_selection": False,
-            "selected_go_sha256": stable_json_sha256(context.selected_go),
+            "feature_selection_protocol": "fold_training_selected60",
+            "nested_feature_selection": True,
+            "outer_training_selected_go_sha256": stable_json_sha256(context.selected_go),
             "folds": manifest_rows,
         },
     )
@@ -1684,8 +1964,8 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
     """Main held-out benchmark: XGBoost, RF, and Logistic Regression on an 80:20 split.
 
     The outer test set did not participate in GO selection or negative-source
-    construction.  Repeated CV uses source-isolated folds under the fixed
-    primary training-selected representation.
+    construction.  Repeated CV uses source-isolated folds and repeats GO
+    variance/MI selection within each fold's training side.
     """
     ratio_label = f"1:{context.ratio}"
     folds = build_cv_fold_datasets(
@@ -1703,7 +1983,7 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
     for name, factory in factories.items():
         t0 = time.time()
         cv_mean, cv_sd = cv_auroc_from_folds(factory, folds)
-        model = factory(spw)
+        model = factory(spw, SEED)
         model.fit(context.X_train, context.y_train)
         scores = predict_scores(model, context.X_test)
         row = {
@@ -1711,6 +1991,8 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
             "primary_ratio": ratio_label,
             "cv_auroc_mean": cv_mean,
             "cv_auroc_sd": cv_sd,
+            "cv_feature_selection_protocol": "nested_fold_training_selected60",
+            "heldout_feature_selection_protocol": "outer_training_selected60",
             "scale_pos_weight": spw if name == "XGBoost" else float("nan"),
             "elapsed_s": time.time() - t0,
         }
@@ -1741,89 +2023,228 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
     }
 
 
-def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> List[Dict[str, Any]]:
-    """Evaluate XGBoost across pos:neg ratios under one fixed GO representation.
+def normalized_auprc(raw_auprc: float, positive_prevalence: float) -> float:
+    """Scale AUPRC above its random baseline while retaining prevalence caveats."""
+    if positive_prevalence >= 1.0:
+        return float("nan")
+    return float((raw_auprc - positive_prevalence) / (1.0 - positive_prevalence))
 
-    The same positive split and the GO terms selected under the current primary
-    ratio are reused for every row, isolating the effect of class balance.  The
-    manuscript's primary-ratio figure is produced separately by
-    ``compare_primary_ratios.py`` because that comparison gives every ratio its
-    own training-selected GO representation.
-    """
-    rows = []
-    for ratio in [1, 2, 3, 4, 5]:
-        train_records = build_side_records(
-            context.train_positive_records,
-            bundle,
-            ratio=ratio,
-            negative_seed=PRIMARY_TRAIN_NEGATIVE_SEED,
-            prefix=f"RATIO_{ratio}_TRAIN",
+
+def evaluate_ratio_folds(folds: Sequence[CVFoldData], fast: bool) -> List[Dict[str, Any]]:
+    """Fit one XGBoost model per nested fold and return fold-level metrics."""
+    rows: List[Dict[str, Any]] = []
+    for fold in folds:
+        model = xgb_model(
+            scale_pos_weight=fold.scale_pos_weight,
+            fast=fast,
+            random_state=fold.model_seed,
         )
-        test_records = build_side_records(
-            context.test_positive_records,
-            bundle,
-            ratio=ratio,
-            negative_seed=PRIMARY_TEST_NEGATIVE_SEED,
-            prefix=f"RATIO_{ratio}_TEST",
+        started = time.time()
+        model.fit(fold.X_train, fold.y_train)
+        scores = predict_scores(model, fold.X_validation)
+        metrics = metrics_from_scores(fold.y_validation, scores)
+        prevalence = float(np.mean(fold.y_validation == 1))
+        rows.append(
+            {
+                "ratio": f"1:{fold.ratio}",
+                "ratio_value": fold.ratio,
+                "repeat_index": fold.repeat_index,
+                "repeat_seed": fold.repeat_seed,
+                "fold_index": fold.fold_index,
+                "n_train_positive": int((fold.y_train == 1).sum()),
+                "n_train_negative": int((fold.y_train == 0).sum()),
+                "n_validation_positive": int((fold.y_validation == 1).sum()),
+                "n_validation_negative": int((fold.y_validation == 0).sum()),
+                "positive_prevalence": prevalence,
+                "random_auprc_baseline": prevalence,
+                "auroc": metrics["test_auroc"],
+                "raw_auprc": metrics["test_auprc"],
+                "normalized_auprc": normalized_auprc(metrics["test_auprc"], prevalence),
+                "f1": metrics["f1"],
+                "precision": metrics["precision"],
+                "recall": metrics["recall"],
+                "brier": metrics["brier"],
+                "scale_pos_weight": fold.scale_pos_weight,
+                "train_negative_seed": fold.train_negative_seed,
+                "validation_negative_seed": fold.validation_negative_seed,
+                "feature_selection_seed": fold.feature_selection_seed,
+                "model_seed": fold.model_seed,
+                "selected_go_sha256": fold.selected_go_sha256,
+                "train_records_sha256": stable_json_sha256(
+                    [(record["id"], record["genes"]) for record in fold.train_records]
+                ),
+                "validation_records_sha256": stable_json_sha256(
+                    [(record["id"], record["genes"]) for record in fold.validation_records]
+                ),
+                "elapsed_s": time.time() - started,
+            }
         )
-        assert_source_isolation(
-            context.train_positive_records,
-            context.test_positive_records,
-            train_records,
-            test_records,
-        )
-        X_train, y_train = records_to_matrix(train_records, context.selected_go, bundle.gene_go)
-        X_test, y_test = records_to_matrix(test_records, context.selected_go, bundle.gene_go)
-        spw = scale_pos_weight_from_labels(y_train, "negative_ratio_sensitivity", {"ratio": f"1:{ratio}"})
+    return rows
+
+
+def selected_go_stability_rows(folds: Sequence[CVFoldData]) -> List[Dict[str, Any]]:
+    """Report fold selection frequency and pairwise overlap for each ratio."""
+    selected_sets = [set(fold.selected_go) for fold in folds]
+    pairwise = [
+        len(left & right) / len(left | right)
+        for left, right in combinations(selected_sets, 2)
+        if left or right
+    ]
+    frequencies = Counter(term for fold in folds for term in fold.selected_go)
+    return [
+        {
+            "ratio": f"1:{folds[0].ratio}",
+            "go_term": term,
+            "selected_fold_count": count,
+            "selected_fold_fraction": count / len(folds),
+            "n_folds": len(folds),
+            "pairwise_jaccard_mean": float(np.mean(pairwise)) if pairwise else 1.0,
+            "pairwise_jaccard_sd": float(np.std(pairwise, ddof=1)) if len(pairwise) > 1 else 0.0,
+            "pairwise_jaccard_min": float(np.min(pairwise)) if pairwise else 1.0,
+            "pairwise_jaccard_max": float(np.max(pairwise)) if pairwise else 1.0,
+        }
+        for term, count in sorted(frequencies.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+
+def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> List[Dict[str, Any]]:
+    """Compare class ratios only within outer training by nested repeated CV."""
+    per_fold_rows: List[Dict[str, Any]] = []
+    stability_rows: List[Dict[str, Any]] = []
+    manifest_folds: List[Dict[str, Any]] = []
+    outer_test_ids = {str(record["id"]) for record in context.test_positive_records}
+
+    for ratio in SUPPORTED_PRIMARY_RATIOS:
         folds = build_cv_fold_datasets(
             bundle,
             context,
             ratio=ratio,
             fast=fast,
-            analysis_name="negative_ratio_sensitivity_cv",
+            analysis_name="training_only_ratio_cv",
         )
-        model = xgb_model(scale_pos_weight=spw, fast=fast)
-        cv_mean, cv_sd = cv_auroc_from_folds(
-            lambda fold_spw: xgb_model(scale_pos_weight=fold_spw, fast=fast),
-            folds,
-        )
-        model.fit(X_train, y_train)
-        scores = predict_scores(model, X_test)
-        row = {
-            "ratio": f"1:{ratio}",
-            "feature_selection_primary_ratio": f"1:{context.ratio}",
-            "n_pos": len(context.train_positive_records) + len(context.test_positive_records),
-            "n_neg": int((y_train == 0).sum() + (y_test == 0).sum()),
-            "scale_pos_weight": spw,
-            "cv_auroc_mean": cv_mean,
-            "cv_auroc_sd": cv_sd,
-        }
-        row.update(metrics_from_scores(y_test, scores))
-        rows.append(row)
-    save_table_aliases(rows, "ratio_sensitivity.csv", "table_robustness.csv", "table_negative_ratio_sensitivity.csv")
+        per_fold_rows.extend(evaluate_ratio_folds(folds, fast=fast))
+        stability_rows.extend(selected_go_stability_rows(folds))
+        for fold in folds:
+            fold_positive_ids = set(fold.train_positive_ids) | set(fold.validation_positive_ids)
+            if fold_positive_ids & outer_test_ids:
+                raise AssertionError("Outer-test pathways entered ratio cross-validation.")
+            manifest_folds.append(
+                {
+                    "ratio": fold.ratio,
+                    "repeat_index": fold.repeat_index,
+                    "repeat_seed": fold.repeat_seed,
+                    "fold_index": fold.fold_index,
+                    "train_negative_seed": fold.train_negative_seed,
+                    "validation_negative_seed": fold.validation_negative_seed,
+                    "feature_selection_seed": fold.feature_selection_seed,
+                    "model_seed": fold.model_seed,
+                    "selected_go": fold.selected_go,
+                    "selected_go_sha256": fold.selected_go_sha256,
+                    "train_positive_ids": fold.train_positive_ids,
+                    "validation_positive_ids": fold.validation_positive_ids,
+                    "train_records_sha256": stable_json_sha256(
+                        [(record["id"], record["genes"]) for record in fold.train_records]
+                    ),
+                    "validation_records_sha256": stable_json_sha256(
+                        [(record["id"], record["genes"]) for record in fold.validation_records]
+                    ),
+                }
+            )
 
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot([r["ratio"] for r in rows], [r["test_auroc"] for r in rows], marker="o", label="AUROC")
-    ax.plot([r["ratio"] for r in rows], [r["test_auprc"] for r in rows], marker="o", label="AUPRC")
+    per_fold_df = pd.DataFrame(per_fold_rows)
+    metric_columns = ["auroc", "raw_auprc", "normalized_auprc", "f1", "precision", "recall", "brier"]
+    summary_rows: List[Dict[str, Any]] = []
+    for ratio in SUPPORTED_PRIMARY_RATIOS:
+        subset = per_fold_df[per_fold_df["ratio_value"] == ratio]
+        row: Dict[str, Any] = {
+            "ratio": f"1:{ratio}",
+            "ratio_value": ratio,
+            "n_folds": len(subset),
+            "preselected_primary_ratio": ratio == DEFAULT_PRIMARY_RATIO,
+            "mean_positive_prevalence": float(subset["positive_prevalence"].mean()),
+            "feature_selection_protocol": "nested_fold_training_selected60",
+        }
+        for metric in metric_columns:
+            row[f"mean_{metric}"] = float(subset[metric].mean())
+            row[f"sd_{metric}"] = float(subset[metric].std(ddof=1)) if len(subset) > 1 else 0.0
+        summary_rows.append(row)
+
+    reference = summary_rows[0]
+    for row in summary_rows:
+        delta = row["mean_auroc"] - reference["mean_auroc"]
+        pooled_sd = math.sqrt((row["sd_auroc"] ** 2 + reference["sd_auroc"] ** 2) / 2.0)
+        row["delta_auroc_vs_1_1"] = delta
+        row["delta_auroc_over_pooled_sd"] = delta / pooled_sd if pooled_sd > 0 else float("nan")
+        row["interpretation_note"] = (
+            "Normalized AUPRC adjusts the random baseline but is not fully prevalence invariant."
+        )
+
+    save_table(TABLE_DIR / "ratio_cv_per_fold.csv", per_fold_rows)
+    save_table(TABLE_DIR / "ratio_cv_summary.csv", summary_rows)
+    save_table(TABLE_DIR / "ratio_cv_selected_go_stability.csv", stability_rows)
+    save_table_aliases(
+        summary_rows,
+        "ratio_sensitivity.csv",
+        "table_robustness.csv",
+        "table_negative_ratio_sensitivity.csv",
+    )
+    save_json(
+        DATA_DIR / "ratio_cv_manifest.json",
+        {
+            "protocol": "outer-training-only repeated stratified CV",
+            "outer_test_used": False,
+            "preselected_primary_ratio": "1:1",
+            "frequency_filter_scope": "label-free full GO-annotated background",
+            "variance_mi_scope": "fold training only",
+            "normalized_auprc_note": (
+                "The normalization subtracts the random prevalence baseline and rescales the remainder; "
+                "it does not make PR performance completely invariant to prevalence."
+            ),
+            "folds": manifest_folds,
+        },
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    labels = [row["ratio"] for row in summary_rows]
+    x = np.arange(len(labels))
+    ax.errorbar(
+        x,
+        [row["mean_auroc"] for row in summary_rows],
+        yerr=[row["sd_auroc"] for row in summary_rows],
+        marker="o",
+        capsize=4,
+        label="AUROC",
+    )
+    ax.errorbar(
+        x,
+        [row["mean_normalized_auprc"] for row in summary_rows],
+        yerr=[row["sd_normalized_auprc"] for row in summary_rows],
+        marker="o",
+        capsize=4,
+        color="#d62728",
+        label="Normalized AUPRC",
+    )
+    ax.set_xticks(x, labels)
     ax.set_xlabel("Positive:negative ratio")
-    ax.set_ylabel("Held-out metric")
-    ax.set_title("Ratio sensitivity under a fixed GO representation")
+    ax.set_ylabel("Cross-validated metric (mean +/- SD)")
+    ax.set_title("Cross-validated performance across class ratios")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(FIG_DIR / "ratio_sensitivity_fixed_features.png", dpi=220)
+    for filename in ["ratio_cv_performance.png", "ratio_sensitivity.png", "Fig7_robustness.png"]:
+        fig.savefig(FIG_DIR / filename, dpi=220)
     plt.close(fig)
 
-    latex_df = pd.DataFrame(rows)[
-        ["ratio", "n_pos", "n_neg", "cv_auroc_mean", "test_auroc", "test_auprc", "f1", "precision", "recall"]
+    latex_df = pd.DataFrame(summary_rows)[
+        ["ratio", "n_folds", "mean_auroc", "sd_auroc", "mean_normalized_auprc", "sd_normalized_auprc", "mean_f1"]
     ].copy()
-    latex_df.columns = ["Ratio", "$n_+$", "$n_-$", "CV AUROC", "Test AUROC", "AUPRC", "F1", "Precision", "Recall"]
+    latex_df.columns = ["Ratio", "Folds", "AUROC", "AUROC SD", "Normalized AUPRC", "AUPRC SD", "F1"]
     write_latex_tabular(
         LATEX_TABLE_DIR / "table_robustness.tex",
         latex_df,
-        "Negative-sampling ratio sensitivity under the fixed primary feature representation.",
+        "Training-only nested cross-validation across positive-to-negative ratios.",
         "tab:robustness_recomputed",
     )
-    return rows
+    return summary_rows
 
 
 def model_catalog(fast: bool, scale_pos_weight: float) -> Dict[str, Any]:
@@ -2269,7 +2690,7 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
     split_payload = {
         "protocol": {
             "primary_ratio": f"1:{context.ratio}",
-            "split_unit": "positive_pathway",
+            "split_unit": "unique_exact_gene_set_group",
             "stratification": "database_source",
             "test_size": PRIMARY_TEST_SIZE,
             "split_seed": context.split_seed,
@@ -2306,13 +2727,20 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
                     "sample_id": record["id"],
                     "split": split_name,
                     "negative_type": record["negative_type"],
-                    "n_genes": len(record["genes"]),
+                    "raw_gene_count": record.get("raw_gene_count", len(record["genes"])),
+                    "annotated_gene_count": record.get(
+                        "annotated_gene_count", len(record["genes"])
+                    ),
                     "source_pathway_ids": ";".join(record.get("source_pathway_ids", [])),
                     "source_families": ";".join(record.get("source_families", [])),
                     "source_overlap_count": record.get("source_overlap_count", 0),
                     "source_overlap_fraction": record.get("source_overlap_fraction", 0.0),
                     "cross_same_family": record.get("cross_same_family", False),
                     "generation_seed": record.get("generation_seed"),
+                    "generation_attempt": record.get("generation_attempt"),
+                    "source_raw_gene_count": record.get("source_raw_gene_count", 0),
+                    "source_annotated_gene_count": record.get("source_annotated_gene_count", 0),
+                    "retention_fraction": record.get("retention_fraction"),
                     "gene_set_sha256": stable_json_sha256(record["genes"]),
                 }
             )
@@ -2351,8 +2779,13 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
 
 
 def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
-    """Persist the processed dataset (pathways, GO maps, features) and generate Fig5_datastats.png."""
+    """Persist source records, modelling groups, features, and dataset audits."""
     save_json(DATA_DIR / "all_pathways.json", bundle.pathways)
+    save_json(DATA_DIR / "pathway_source_records.json", bundle.source_pathways)
+    save_json(DATA_DIR / "pathway_gene_set_groups.json", bundle.pathways)
+    save_table(TABLE_DIR / "pathway_duplicate_groups.csv", bundle.duplicate_groups)
+    save_table(TABLE_DIR / "pathway_mixed_metadata_groups.csv", bundle.mixed_metadata_groups)
+    save_table(TABLE_DIR / "pathway_grouping_summary.csv", [bundle.grouping_summary])
     save_json(DATA_DIR / "gene_go.json", {k: sorted(v) for k, v in bundle.gene_go.items()})
     save_json(DATA_DIR / "go_term_names.json", bundle.go_term_names)
     save_json(DATA_DIR / "selected_go_terms.json", bundle.selected_go)
@@ -2366,6 +2799,7 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
             "primary_ratio": f"1:{context.ratio}",
             "go_selection_mode": GO_SELECTION_MODE,
             "feature_selection_scope": "outer_train_only",
+            "modelling_unit": "unique_exact_gene_set_group",
         },
     )
     rows = [
@@ -2374,19 +2808,49 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
             "name": r["name"],
             "source": r["source"],
             "family": r["family"],
-            "n_genes": len(r["genes"]),
+            "raw_gene_count": r["raw_gene_count"],
+            "annotated_gene_count": r["annotated_gene_count"],
+            "gene_set_group_id": r["gene_set_group_id"],
+            "gene_set_sha256": r["gene_set_sha256"],
+            "source_record_count": r["source_record_count"],
+            "mixed_source": r["mixed_source"],
+            "mixed_family": r["mixed_family"],
         }
         for r in pathway_records(bundle)
     ]
     save_table(TABLE_DIR / "pathway_inventory.csv", rows)
+    save_table(
+        TABLE_DIR / "pathway_source_inventory.csv",
+        [
+            {
+                "pathway_id": pathway_id,
+                "pathway_name": info.get("name", pathway_id),
+                "source": info.get("source", ""),
+                "family": info.get("family", ""),
+                "raw_gene_count": len(info["genes"]),
+                "gene_set_sha256": gene_set_sha256(info["genes"]),
+            }
+            for pathway_id, info in sorted(bundle.source_pathways.items())
+        ],
+    )
     summary = {
         "dataset_source": bundle.source,
         "primary_ratio": f"1:{context.ratio}",
         "positive_fraction_train": float(np.mean(context.y_train == 1)),
         "positive_fraction_test": float(np.mean(context.y_test == 1)),
+        "n_pathway_source_records": len(bundle.source_pathways),
+        "n_source_kegg": sum(1 for r in bundle.source_pathways.values() if r["source"] == "KEGG"),
+        "n_source_aracyc": sum(1 for r in bundle.source_pathways.values() if r["source"] == "AraCyc"),
+        "n_modelling_groups": len(rows),
+        "n_group_kegg_stratum": sum(1 for r in rows if r["source"] == "KEGG"),
+        "n_group_aracyc_stratum": sum(1 for r in rows if r["source"] == "AraCyc"),
         "n_pathways": len(rows),
         "n_kegg": sum(1 for r in rows if r["source"] == "KEGG"),
         "n_aracyc": sum(1 for r in rows if r["source"] == "AraCyc"),
+        "n_exact_duplicate_groups": bundle.grouping_summary.get("exact_duplicate_group_count", 0),
+        "n_collapsed_extra_records": bundle.grouping_summary.get("collapsed_extra_record_count", 0),
+        "n_mixed_source_groups": bundle.grouping_summary.get("mixed_source_group_count", 0),
+        "n_mixed_family_groups": bundle.grouping_summary.get("mixed_family_group_count", 0),
         "n_gene_go": len(bundle.gene_go),
         "n_raw_go_terms": len(bundle.go_genes),
         "n_selected_go": len(bundle.selected_go),
@@ -2394,7 +2858,7 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
     }
     pathway_member_genes = {
         gene
-        for pathway in bundle.pathways.values()
+        for pathway in bundle.source_pathways.values()
         for gene in pathway["genes"]
     }
     annotated_pathway_genes = pathway_member_genes & set(bundle.gene_go)
@@ -2428,12 +2892,16 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
     # the auditable quantities that come directly from the data snapshot.
     df = pd.DataFrame(rows)
     fig, axes = plt.subplots(1, 3, figsize=(13, 4))
-    axes[0].bar(["KEGG", "AraCyc"], [summary["n_kegg"], summary["n_aracyc"]], color=["#4e79a7", "#59a14f"])
-    axes[0].set_title("Curated pathway sources")
-    axes[0].set_ylabel("Pathways")
-    axes[1].hist(df["n_genes"], bins=30, color="#f28e2b", edgecolor="white")
-    axes[1].set_title("Pathway-size distribution")
-    axes[1].set_xlabel("Genes per pathway")
+    axes[0].bar(
+        ["KEGG", "AraCyc"],
+        [summary["n_group_kegg_stratum"], summary["n_group_aracyc_stratum"]],
+        color=["#4e79a7", "#59a14f"],
+    )
+    axes[0].set_title("Modelling groups by source stratum")
+    axes[0].set_ylabel("Unique gene-set groups")
+    axes[1].hist(df["raw_gene_count"], bins=30, color="#f28e2b", edgecolor="white")
+    axes[1].set_title("Gene-set size distribution")
+    axes[1].set_xlabel("Genes per modelling group")
     fam_counts = df["family"].value_counts().head(10).sort_values()
     axes[2].barh(fam_counts.index, fam_counts.values, color="#bab0ab")
     axes[2].set_title("Top pathway families")
@@ -2597,7 +3065,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
                 "n_repeats": cv_repeats,
                 "total_folds": cv_splits * cv_repeats,
                 "random_state": "42" if args.quick else "42;7;13",
-                "metric_reported": "CV AUROC plus held-out metrics for ratios 1:1 to 1:5",
+                "metric_reported": "outer-training-only CV AUROC, normalized AUPRC, F1, precision, recall, and Brier",
                 "error_term_type": "SD",
                 "output_table": "tables/ratio_sensitivity.csv",
             }
@@ -2662,13 +3130,14 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
                 "output_table": "tables/feature_importance.csv",
             }
         )
-    # These analyses share the canonical 60-term representation selected on
-    # the outer training side.  Source-derived controls are isolated, but GO
-    # selection is not repeated inside CV or LOFO folds.
     for row in rows:
         row["primary_ratio"] = f"1:{args.primary_ratio}"
-        row["feature_selection_protocol"] = "fixed_primary_training_selected"
-        row["nested_feature_selection"] = False
+        if row["analysis_name"] in {"seed42_reference_run", "negative_ratio_sensitivity"}:
+            row["feature_selection_protocol"] = "nested_fold_training_selected60_for_cv"
+            row["nested_feature_selection"] = True
+        else:
+            row["feature_selection_protocol"] = "fixed_outer_training_selected60"
+            row["nested_feature_selection"] = False
         row["negative_source_isolation"] = True
     return rows
 
@@ -2703,9 +3172,16 @@ def save_result_summary(
         "primary_ratio": f"1:{context.ratio}",
         "positive_fraction_train": float(np.mean(context.y_train == 1)),
         "positive_fraction_test": float(np.mean(context.y_test == 1)),
+        "n_pathway_source_records": len(bundle.source_pathways),
+        "n_source_kegg": sum(1 for r in bundle.source_pathways.values() if r["source"] == "KEGG"),
+        "n_source_aracyc": sum(1 for r in bundle.source_pathways.values() if r["source"] == "AraCyc"),
+        "n_modelling_groups": len(bundle.pathways),
+        "n_group_kegg_stratum": sum(1 for r in bundle.pathways.values() if r["source"] == "KEGG"),
+        "n_group_aracyc_stratum": sum(1 for r in bundle.pathways.values() if r["source"] == "AraCyc"),
         "n_pathways": len(bundle.pathways),
         "n_kegg": sum(1 for r in bundle.pathways.values() if r["source"] == "KEGG"),
         "n_aracyc": sum(1 for r in bundle.pathways.values() if r["source"] == "AraCyc"),
+        "pathway_grouping_summary": bundle.grouping_summary,
         "n_go_annotated_genes": len(bundle.gene_go),
         "n_selected_go": len(bundle.selected_go),
         "n_features": len(bundle.feature_names),
@@ -2776,7 +3252,8 @@ def save_manifest(
         "args": manifest_args,
         "run_mode": run_mode,
         "quick": bool(args.quick),
-        "paper_result": not bool(args.quick) and context.ratio == DEFAULT_PRIMARY_RATIO,
+        "paper_result": False,
+        "candidate_result": not bool(args.quick) and context.ratio == DEFAULT_PRIMARY_RATIO,
         "formal_full_run": not bool(args.quick),
         "comparison_run": context.ratio != DEFAULT_PRIMARY_RATIO,
         "primary_ratio": f"1:{context.ratio}",
@@ -2784,11 +3261,18 @@ def save_manifest(
         "dataset_mode": dataset_mode_from_args(args),
         "negative_scheme": NEGATIVE_SCHEME,
         "go_selection_mode": GO_SELECTION_MODE,
-        "feature_selection_scope": "outer_train_only",
-        "primary_split_unit": "pathway",
+        "feature_selection_scope": {
+            "heldout_models": "outer_train_only",
+            "ratio_cv": "fold_train_only_for_variance_and_mutual_information",
+            "frequency_prefilter": "label_free_full_go_background",
+        },
+        "primary_split_unit": "unique_exact_gene_set_group",
         "primary_split_stratification": "database_source",
         "negative_source_isolation": True,
         "lofo_nested_feature_selection": False,
+        "ratio_cv_nested_feature_selection": True,
+        "preselected_primary_ratio": "1:1",
+        "pathway_grouping": bundle.grouping_summary,
         "selected_go_sha256": selected_go_sha256,
         "primary_split_sha256": split_sha256,
         "split_seeds": {
@@ -2829,6 +3313,7 @@ def save_manifest(
         "notes": [
             "Raw mode rebuilds the dataset from the documented TAIR, KEGG, and PMN/AraCyc inputs.",
             "The 60 GO terms are selected only from the primary outer-training records.",
+            "Ratio comparison repeats variance and mutual-information selection inside each fold training side.",
             "Source-derived negative controls are generated independently on each split side.",
             "LOFO uses the fixed primary training-selected representation and is not nested feature selection.",
             "The supplementary 13-model comparison uses the common held-out split.",
@@ -2840,12 +3325,9 @@ def save_manifest(
                 "tables/kegg_pathway_filter_summary.json"
             ),
             "method_comparison": "tables/table_method_comparison.csv and figures/Fig8_methods.png",
-            "fixed_feature_ratio_sensitivity": (
-                "tables/table_robustness.csv and figures/ratio_sensitivity_fixed_features.png"
-            ),
-            "independent_primary_ratio_comparison": (
-                "tables/primary_ratio_performance_comparison.csv and "
-                "figures/Fig7_robustness.png; generated by compare_primary_ratios.py"
+            "training_only_ratio_cv": (
+                "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, "
+                "data/ratio_cv_manifest.json, and figures/Fig7_robustness.png"
             ),
             "lofo": "tables/table_lofo.csv and figures/Fig6_lofo.png",
             "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
@@ -2854,10 +3336,155 @@ def save_manifest(
             "negative_metadata": "tables/negative_metadata.csv",
             "go_selection_audit": "tables/go_selection_audit.csv",
             "cv_split_audit": "tables/cv_split_audit.csv and data/cv_fold_manifest.json",
+            "pathway_grouping": (
+                "data/pathway_source_records.json, data/pathway_gene_set_groups.json, "
+                "and tables/pathway_grouping_summary.csv"
+            ),
             "latex_fragments": "tables/latex/*.tex",
         },
     }
     save_json(OUT_DIR / "manifest.json", manifest)
+
+
+def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryContext) -> None:
+    """Compare the candidate run with the preserved pre-grouping result set."""
+    old_dir = ROOT / "generated"
+    if OUT_DIR.resolve() == old_dir.resolve() or not (old_dir / "tables" / "main_benchmark.csv").exists():
+        return
+
+    rows: List[Dict[str, Any]] = []
+
+    def add(category: str, item: str, old: Any, candidate: Any) -> None:
+        delta: Any = ""
+        if isinstance(old, (int, float, np.number)) and isinstance(candidate, (int, float, np.number)):
+            delta = float(candidate) - float(old)
+        rows.append(
+            {
+                "category": category,
+                "item": item,
+                "previous_value": old,
+                "candidate_value": candidate,
+                "candidate_minus_previous": delta,
+            }
+        )
+
+    add("dataset", "source database records", 538, len(bundle.source_pathways))
+    add("dataset", "positive modelling instances", 538, len(bundle.pathways))
+    add("dataset", "KEGG source records", 155, bundle.grouping_summary.get("source_record_kegg"))
+    add("dataset", "AraCyc source records", 383, bundle.grouping_summary.get("source_record_aracyc"))
+    add("dataset", "exact duplicate groups", 0, bundle.grouping_summary.get("exact_duplicate_group_count"))
+    add("dataset", "collapsed extra records", 0, bundle.grouping_summary.get("collapsed_extra_record_count"))
+    add("split", "outer training positives", 430, len(context.train_positive_records))
+    add("split", "outer test positives", 108, len(context.test_positive_records))
+
+    old_go_path = old_dir / "data" / "selected_go_terms.json"
+    if old_go_path.exists():
+        old_go = set(json.loads(old_go_path.read_text(encoding="utf-8")))
+        candidate_go = set(context.selected_go)
+        add("features", "selected GO overlap count", len(old_go), len(old_go & candidate_go))
+        add(
+            "features",
+            "selected GO Jaccard",
+            1.0,
+            len(old_go & candidate_go) / len(old_go | candidate_go),
+        )
+
+    for table_name, key, metric_columns in [
+        ("main_benchmark.csv", "model", ["cv_auroc_mean", "cv_auroc_sd", "test_auroc", "test_auprc", "f1"]),
+        ("ablation.csv", "configuration", ["test_auroc", "test_auprc", "f1"]),
+    ]:
+        old_path = old_dir / "tables" / table_name
+        new_path = TABLE_DIR / table_name
+        if not old_path.exists() or not new_path.exists():
+            continue
+        old_df, new_df = pd.read_csv(old_path), pd.read_csv(new_path)
+        for identifier in sorted(set(old_df[key]) & set(new_df[key])):
+            old_row = old_df[old_df[key] == identifier].iloc[0]
+            new_row = new_df[new_df[key] == identifier].iloc[0]
+            for metric in metric_columns:
+                if metric in old_row and metric in new_row:
+                    add(table_name.removesuffix(".csv"), f"{identifier} {metric}", old_row[metric], new_row[metric])
+
+    old_lofo = old_dir / "tables" / "lofo.csv"
+    new_lofo = TABLE_DIR / "lofo.csv"
+    if old_lofo.exists() and new_lofo.exists():
+        old_df, new_df = pd.read_csv(old_lofo), pd.read_csv(new_lofo)
+        add("lofo", "reported families", len(old_df), len(new_df))
+        for metric in ["test_auroc", "test_auprc", "f1"]:
+            add("lofo", f"mean {metric}", old_df[metric].mean(), new_df[metric].mean())
+
+    old_importance = old_dir / "tables" / "feature_importance.csv"
+    new_importance = TABLE_DIR / "feature_importance.csv"
+    if old_importance.exists() and new_importance.exists():
+        old_top = set(pd.read_csv(old_importance).head(10)["feature"])
+        new_top = set(pd.read_csv(new_importance).head(10)["feature"])
+        renamed_old = {
+            "annotated_gene_count" if feature == "pathway_size" else
+            "log_annotated_gene_count" if feature == "log_size" else feature
+            for feature in old_top
+        }
+        add("importance", "top-10 feature overlap", 10, len(renamed_old & new_top))
+
+    old_negative = old_dir / "tables" / "negative_metadata.csv"
+    new_negative = TABLE_DIR / "negative_metadata.csv"
+    negative_comparison_rows: List[Dict[str, Any]] = []
+    if old_negative.exists() and new_negative.exists():
+        old_df, new_df = pd.read_csv(old_negative), pd.read_csv(new_negative)
+        old_size_column = "n_genes" if "n_genes" in old_df else "raw_gene_count"
+        for negative_type in sorted(set(old_df["negative_type"]) | set(new_df["negative_type"])):
+            old_subset = old_df[old_df["negative_type"] == negative_type]
+            new_subset = new_df[new_df["negative_type"] == negative_type]
+            negative_comparison_rows.append(
+                {
+                    "negative_type": negative_type,
+                    "previous_count": len(old_subset),
+                    "candidate_count": len(new_subset),
+                    "previous_mean_raw_gene_count": float(old_subset[old_size_column].mean()),
+                    "candidate_mean_raw_gene_count": float(new_subset["raw_gene_count"].mean()),
+                    "candidate_mean_annotated_gene_count": float(new_subset["annotated_gene_count"].mean()),
+                    "previous_mean_source_overlap_fraction": float(old_subset["source_overlap_fraction"].mean()),
+                    "candidate_mean_source_overlap_fraction": float(new_subset["source_overlap_fraction"].mean()),
+                }
+            )
+    if negative_comparison_rows:
+        save_table(TABLE_DIR / "negative_distribution_comparison.csv", negative_comparison_rows)
+
+    add("protocol", "ratio comparison data", "outer held-out test", "outer-training nested CV")
+    add("protocol", "ratio feature selection", "fixed primary feature set", "fold-training selection")
+    add("protocol", "outer test ratios evaluated", "1:1 through 1:5", "preselected 1:1 only")
+    save_table(TABLE_DIR / "old_vs_candidate_comparison.csv", rows)
+
+    lines = [
+        "# Previous and candidate analysis comparison",
+        "",
+        "The previous result directory remains unchanged. The candidate uses exact gene-set groups and training-only nested ratio cross-validation.",
+        "",
+        f"- Source records retained: {len(bundle.source_pathways)}",
+        f"- Unique gene-set modelling instances: {len(bundle.pathways)}",
+        f"- Exact duplicate groups: {bundle.grouping_summary.get('exact_duplicate_group_count', 0)}",
+        f"- Collapsed extra records: {bundle.grouping_summary.get('collapsed_extra_record_count', 0)}",
+        f"- Mixed-source groups: {bundle.grouping_summary.get('mixed_source_group_count', 0)}",
+        f"- Mixed-family groups using the representative-family LOFO rule: {bundle.grouping_summary.get('mixed_family_group_count', 0)}",
+        "",
+        "Numeric differences are listed in tables/old_vs_candidate_comparison.csv. Negative-set differences are listed in tables/negative_distribution_comparison.csv.",
+        "Normalized AUPRC corrects its random baseline but is not completely invariant to class prevalence.",
+        "No statistical-significance claim is made from the ratio-fold summaries.",
+    ]
+    (OUT_DIR / "old_vs_candidate_comparison.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    checklist = [
+        "Paper items to synchronize only after candidate approval:",
+        "- Dataset description: 538 source records and 512 unique gene-set modelling instances.",
+        "- Outer train/test sample counts and class prevalence.",
+        "- Exact-duplicate grouping rule and alias provenance.",
+        "- Engineered feature names: annotated_gene_count and log_annotated_gene_count.",
+        "- Main benchmark, confusion matrix, score-by-negative-type, and model-comparison metrics.",
+        "- Ratio protocol: outer-training nested CV; outer test evaluated only for preselected 1:1.",
+        "- Ratio table and figure, including normalized-AUPRC caveat.",
+        "- Ablation, feature-importance, and LOFO results.",
+        "- LOFO limitation for mixed-family groups represented by one compatibility family.",
+    ]
+    (OUT_DIR / "paper_sync_checklist.txt").write_text("\n".join(checklist) + "\n", encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -2989,6 +3616,7 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
         context,
         ["main", "ratio", "models", "ablation", "lofo", "importance"],
     )
+    save_old_vs_candidate_comparison(bundle, context)
     print(f"\nDone. Outputs written to {OUT_DIR}")
 
 
@@ -3085,10 +3713,10 @@ def parse_args() -> argparse.Namespace:
     if args.full:
         args.quick = False
     if args.primary_ratio == DEFAULT_PRIMARY_RATIO:
-        default_out = ROOT / ("generated_quick" if args.quick else "generated")
+        default_out = Path("/tmp/pathwayml_grouped_cv_quick") if args.quick else ROOT / "generated_grouped_cv_candidate"
     else:
-        name = f"ratio_1_{args.primary_ratio}" + ("_quick" if args.quick else "")
-        default_out = ROOT / "ratio_runs" / name
+        name = f"generated_grouped_cv_ratio_1_{args.primary_ratio}" + ("_quick" if args.quick else "")
+        default_out = ROOT / name
     if args.out_dir is None:
         args.out_dir = str(default_out)
     else:

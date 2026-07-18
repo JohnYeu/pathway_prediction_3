@@ -30,45 +30,91 @@ class ReproduciblePipelineTests(unittest.TestCase):
         )
 
     def test_primary_split_and_source_isolation(self) -> None:
-        self.assertEqual(len(self.context.train_positive_records), 430)
-        self.assertEqual(len(self.context.test_positive_records), 108)
+        self.assertEqual(len(self.context.train_positive_records), 409)
+        self.assertEqual(len(self.context.test_positive_records), 103)
         self.assertEqual(self.context.ratio, 1)
-        self.assertEqual(len(self.context.train_records), 860)
-        self.assertEqual(len(self.context.test_records), 216)
+        self.assertEqual(len(self.context.train_records), 818)
+        self.assertEqual(len(self.context.test_records), 206)
         pipeline.assert_source_isolation(
             self.context.train_positive_records,
             self.context.test_positive_records,
             self.context.train_records,
             self.context.test_records,
         )
+        train_hashes = {record["gene_set_sha256"] for record in self.context.train_positive_records}
+        test_hashes = {record["gene_set_sha256"] for record in self.context.test_positive_records}
+        self.assertFalse(train_hashes & test_hashes)
+
+    def test_exact_gene_set_grouping(self) -> None:
+        summary = self.bundle.grouping_summary
+        self.assertEqual(summary["source_record_count"], 538)
+        self.assertEqual(summary["source_record_kegg"], 155)
+        self.assertEqual(summary["source_record_aracyc"], 383)
+        self.assertEqual(summary["modelling_group_count"], 512)
+        self.assertEqual(summary["modelling_group_kegg_stratum"], 155)
+        self.assertEqual(summary["modelling_group_aracyc_stratum"], 357)
+        self.assertEqual(summary["exact_duplicate_group_count"], 20)
+        self.assertEqual(summary["collapsed_extra_record_count"], 26)
+        self.assertEqual(summary["mixed_source_group_count"], 1)
+        self.assertEqual(summary["mixed_family_group_count"], 4)
+        source_union = {gene for info in self.bundle.source_pathways.values() for gene in info["genes"]}
+        group_union = {gene for info in self.bundle.pathways.values() for gene in info["genes"]}
+        self.assertEqual(source_union, group_union)
 
     def test_training_selection_has_fixed_dimension(self) -> None:
         self.assertEqual(len(self.context.selected_go), pipeline.N_GO_TERMS)
         self.assertEqual(len(self.context.feature_names), pipeline.N_GO_TERMS + 9)
         self.assertEqual(self.context.feature_selection_stages["mi_select"], pipeline.N_GO_TERMS)
 
-    def test_one_to_two_branch_has_independent_records(self) -> None:
-        # Build the comparison branch from a fresh bundle because selecting GO
-        # terms updates the bundle's active feature representation in place.
-        bundle = pipeline.load_raw_bundle(pipeline.DEFAULT_RAW_DIR)
-        context = pipeline.prepare_primary_context(bundle, ratio=2)
-        self.assertEqual(context.ratio, 2)
-        self.assertEqual(len(context.train_positive_records), 430)
-        self.assertEqual(len(context.test_positive_records), 108)
-        self.assertEqual(len(context.train_records), 1290)
-        self.assertEqual(len(context.test_records), 324)
-        self.assertEqual(int((context.y_train == 0).sum()), 860)
-        self.assertEqual(int((context.y_test == 0).sum()), 216)
-        self.assertEqual(
-            pipeline.scale_pos_weight_from_labels(context.y_train, "test_ratio_1_2"),
-            2.0,
+    def test_negative_generator_boundaries(self) -> None:
+        samples = pipeline.generate_negative_samples(
+            self.bundle.pathways,
+            sorted(self.bundle.gene_go),
+            160,
+            seed=142,
         )
-        pipeline.assert_source_isolation(
-            context.train_positive_records,
-            context.test_positive_records,
-            context.train_records,
-            context.test_records,
+        self.assertTrue(all(sample.annotated_gene_count >= pipeline.MIN_PATHWAY_GENES for sample in samples))
+        for sample in samples:
+            if sample.negative_type == "cross_pathway":
+                self.assertEqual(len(sample.source_pathway_ids), 2)
+                self.assertEqual(len(set(sample.source_pathway_ids)), 2)
+            if sample.negative_type == "partial_50_80":
+                self.assertIsNotNone(sample.retention_fraction)
+                self.assertGreaterEqual(sample.retention_fraction, 0.5)
+                self.assertLessEqual(sample.retention_fraction, 0.8)
+
+    def test_nested_fold_selection_uses_fold_training_records(self) -> None:
+        folds = pipeline.build_cv_fold_datasets(
+            self.bundle,
+            self.context,
+            ratio=1,
+            fast=True,
+            analysis_name="test_nested_cv",
         )
+        self.assertEqual(len(folds), 3)
+        outer_test_ids = {record["id"] for record in self.context.test_positive_records}
+        for fold in folds:
+            self.assertFalse((set(fold.train_positive_ids) | set(fold.validation_positive_ids)) & outer_test_ids)
+            selected, _, _ = pipeline.select_go_terms_from_records(
+                fold.train_records,
+                self.bundle.gene_go,
+                self.bundle.go_genes,
+                seed=fold.feature_selection_seed,
+            )
+            self.assertEqual(selected, fold.selected_go)
+            self.assertEqual(pipeline.stable_json_sha256(selected), fold.selected_go_sha256)
+
+    def test_deterministic_seed_derivation(self) -> None:
+        cases = {
+            (42, 1, 42, 0, "train", "negative_generation"): 1973658644,
+            (42, 1, 42, 0, "validation", "negative_generation"): 3715151037,
+            (42, 5, 13, 4, "train", "go_selection"): 525790726,
+        }
+        for values, expected in cases.items():
+            self.assertEqual(pipeline.derive_deterministic_seed(*values), expected)
+        forward = [pipeline.derive_deterministic_seed(*values) for values in cases]
+        reverse = [pipeline.derive_deterministic_seed(*values) for values in reversed(cases)]
+        self.assertEqual(forward, list(reversed(reverse)))
 
     def test_entropy_zero_boundary_and_nonzero_compatibility(self) -> None:
         # An annotated gene with none of the selected terms exercises the new
@@ -101,12 +147,12 @@ class ReproduciblePipelineTests(unittest.TestCase):
         self.assertEqual(float(current[-3]), float(previous_formula))
 
     def test_negative_generator_rng_regression(self) -> None:
-        # Adding source metadata must not consume random numbers or alter the
-        # established fixed-seed control gene sets.
+        # The fixture locks the corrected generator, including exact grouping,
+        # integer partial retention, source-distinct cross controls, and retries.
         expected = {
-            42: "dbc1e16dde594002ed82e18f22e75e1c2396735d29520975938a93c94be57d54",
-            142: "89ebac91371622e2b47040eafcc8e977f1ef07d095b8c6d6df1532e1aa334c99",
-            242: "621733c38d87529709f503955b4743b00875d6a6774050743d04aed24d5dfb37",
+            42: "21360319f1389052daa65a7860f490007ad8df8165622a27ad83ccd030cfa45c",
+            142: "16445546c1fb5bc7fff57c1d4ed0495e7a53b8b4f6a9eed58a05bc7a01c372ca",
+            242: "3bb07189b7ae09b08d9e42d8f83515f8cd9fe6030e5ecb0e7d3f200b4c6ce09d",
         }
         for seed, expected_hash in expected.items():
             gene_sets = pipeline.generate_negative_gene_sets(
@@ -117,6 +163,31 @@ class ReproduciblePipelineTests(unittest.TestCase):
             )
             payload = json.dumps(gene_sets, separators=(",", ":")).encode("utf-8")
             self.assertEqual(hashlib.sha256(payload).hexdigest(), expected_hash)
+
+    def test_feature_names_use_annotated_gene_count(self) -> None:
+        self.assertIn("annotated_gene_count", self.context.feature_names)
+        self.assertIn("log_annotated_gene_count", self.context.feature_names)
+        self.assertNotIn("pathway_size", self.context.feature_names)
+        self.assertNotIn("log_size", self.context.feature_names)
+
+    def test_xgboost_fold_predictions_are_deterministic(self) -> None:
+        fold = pipeline.build_cv_fold_datasets(
+            self.bundle,
+            self.context,
+            ratio=1,
+            fast=True,
+            analysis_name="test_xgb_determinism",
+        )[0]
+        predictions = []
+        for _ in range(2):
+            model = pipeline.xgb_model(
+                scale_pos_weight=fold.scale_pos_weight,
+                fast=True,
+                random_state=fold.model_seed,
+            )
+            model.fit(fold.X_train, fold.y_train)
+            predictions.append(pipeline.predict_scores(model, fold.X_validation))
+        self.assertTrue(np.array_equal(predictions[0], predictions[1]))
 
 
 if __name__ == "__main__":

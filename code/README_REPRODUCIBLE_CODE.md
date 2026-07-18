@@ -7,31 +7,28 @@ source files under `raw_sources/`.
 
 ## What This Code Rebuilds
 
-The pipeline regenerates the main intermediate products needed by the paper:
+The current candidate pipeline regenerates the main intermediate products under
+`generated_grouped_cv_candidate/`:
 
-- dataset inventory: `generated/tables/pathway_inventory.csv`
-- dataset summary: `generated/tables/dataset_summary.csv`
-- main held-out benchmark: `generated/tables/table_main_benchmark.csv`
-- 13-method comparison: `generated/tables/table_method_comparison.csv`
-- negative-ratio sensitivity: `generated/tables/table_robustness.csv`
-- leave-one-family-out validation: `generated/tables/table_lofo.csv`
-- ablation study: `generated/tables/table_ablation.csv`
-- feature importance / SHAP fallback: `generated/tables/table_top_features.csv`
-- primary split audit: `generated/tables/main_split_audit.csv`
-- negative-source metadata: `generated/tables/negative_metadata.csv`
-- GO-selection audit: `generated/tables/go_selection_audit.csv`
-- CV split audit: `generated/tables/cv_split_audit.csv`
-- KEGG pathway filter audit: `generated/tables/kegg_pathway_filter_audit.csv`
-- compute environment: `generated/tables/compute_environment.csv`
-- LaTeX table fragments: `generated/tables/latex/*.tex`
+- source records and exact gene-set groups: `data/pathway_source_records.json`
+  and `data/pathway_gene_set_groups.json`
+- grouping audit: `tables/pathway_grouping_summary.csv` and
+  `tables/pathway_duplicate_groups.csv`
+- main held-out benchmark: `tables/main_benchmark.csv`
+- training-only nested ratio comparison: `tables/ratio_cv_per_fold.csv` and
+  `tables/ratio_cv_summary.csv`
+- 13-method comparison: `tables/model_comparison.csv`
+- leave-one-family-out validation: `tables/lofo.csv`
+- ablation study: `tables/ablation.csv`
+- feature importance: `tables/feature_importance.csv`
+- split, negative-source, GO-selection, and CV audits under `tables/` and `data/`
 
-It also regenerates paper-facing replacement figures:
+It also creates candidate figures without changing the current manuscript:
 
 - `generated/figures/Fig3_shap.png`
 - `generated/figures/Fig5_datastats.png`
 - `generated/figures/Fig6_lofo.png`
-- `generated/figures/Fig7_robustness.png` (published by
-  `compare_primary_ratios.py` after the independent ratio branches are ready)
+- `generated_grouped_cv_candidate/figures/Fig7_robustness.png`
 - `generated/figures/Fig8_methods.png`
 - `generated/figures/Fig_ablation.png`
 
@@ -68,7 +65,11 @@ annotations across GO slim categories.
 
 ## Evaluation Protocol
 
-The primary benchmark splits curated positive pathways before controls are
+The 538 KEGG/AraCyc source records are retained as provenance. Records with
+exactly the same normalized gene membership are represented by one of 512
+gene-set modelling instances. Near-duplicate sets are not combined.
+
+The primary benchmark splits those modelling instances before controls are
 generated. KEGG/AraCyc proportions are preserved with a fixed seed-42 split.
 Training controls are derived only from training pathways, and test controls
 are derived only from test pathways.
@@ -82,11 +83,12 @@ label-free background frequency filter
 -> top 60 GO terms
 ```
 
-All reference models and supplementary classifiers use this same fixed feature
-representation. Repeated CV regenerates controls independently on each fold
-side, but does not repeat GO selection inside each fold. LOFO likewise uses the
-fixed primary training-selected representation and is therefore not a nested
-feature-selection analysis.
+Held-out reference models and supplementary classifiers use the same 60 terms
+selected from the complete outer-training side. Ratio comparison is performed
+only inside outer training. Each ratio/fold independently generates controls
+and repeats variance and mutual-information selection on fold training. The
+outer test set is evaluated only for the preselected 1:1 candidate. LOFO uses
+the fixed outer-training representation and is not nested.
 
 An optional cached-data mode is available for comparison with archived inputs:
 
@@ -99,8 +101,7 @@ The paper results use raw-source mode rather than cached-data mode.
 ## Quick vs Full
 
 `--quick` is for checking that the code and data flow work. It uses smaller
-models and lighter cross-validation, and writes to `generated_quick/` so it
-cannot overwrite the formal outputs in `generated/`.
+models and three folds, and writes to `/tmp/pathwayml_grouped_cv_quick`.
 
 For heavier paper-style reruns, omit `--quick`:
 
@@ -108,32 +109,17 @@ For heavier paper-style reruns, omit `--quick`:
 python3 reproducible_pipeline.py --sections all
 ```
 
-Full mode takes substantially longer because it reruns boosted trees,
-cross-validation, model comparison, LOFO, and feature importance.
+Full mode writes to `generated_grouped_cv_candidate/`. The preserved
+pre-grouping result directories and LaTeX files are not overwritten.
 
-## Independent Primary-Ratio Comparisons
+## Ratio Comparison
 
-The formal outputs in `generated/` use a 1:1 positive-to-negative ratio.
-Complete 1:2 through 1:5 sensitivity branches can be trained without
-overwriting them:
-
-```bash
-python3 reproducible_pipeline.py --full --sections all
-python3 make_metric_figures.py --primary-ratio 1
-python3 reproducible_pipeline.py --full --primary-ratio 2 --sections all
-python3 reproducible_pipeline.py --full --primary-ratio 3 --sections all
-python3 reproducible_pipeline.py --full --primary-ratio 4 --sections all
-python3 reproducible_pipeline.py --full --primary-ratio 5 --sections all
-python3 compare_primary_ratios.py --publish-dir generated
-```
-
-Use `--primary-ratio 2`, `3`, `4`, or `5` to write complete branches under
-`ratio_runs/ratio_1_2/` through `ratio_runs/ratio_1_5/`. A reproducibility
-snapshot of the formal 1:1 run is kept under `ratio_runs/ratio_1_1/`. The
-five-way comparison is written to `ratio_runs/comparison_all_ratios/`. Each
-branch generates its own controls and selects its own 60 GO terms from the
-corresponding training records. The comparison publishes normalized AUPRC
-alongside AUROC because the random AUPRC baseline changes with class prevalence.
+The `ratio` section compares 1:1 through 1:5 only within outer training by
+three-repeat, five-fold cross-validation in full mode. Each fold selects its own
+60 GO terms. The table reports raw AUPRC, its random prevalence baseline, and
+normalized AUPRC. The normalization is useful for context but does not make PR
+performance completely independent of prevalence. The code records 1:1 as the
+preselected candidate and does not select a winner automatically.
 
 ## Reproducibility Inputs
 
