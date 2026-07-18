@@ -1,5 +1,13 @@
 {
   "dataset_source": "raw",
+  "jaccard_feature_protocol": {
+    "global_rng_state_unchanged": true,
+    "input_order_invariant": true,
+    "large_gene_sets": "sample 30 annotated genes without replacement",
+    "sampling_salt": "pathwayml-ath-jaccard-cap30-v1",
+    "sampling_seed": "SHA256 of sorted complete G* membership and algorithm salt",
+    "small_gene_sets": "all annotated genes when |G*| <= 30"
+  },
   "n_aracyc": 357,
   "n_collapsed_extra_records": 26,
   "n_exact_duplicate_groups": 20,

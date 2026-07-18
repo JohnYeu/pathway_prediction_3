@@ -59,15 +59,15 @@ Curated pathway databases (such as KEGG, AraCyc) capture only a limited fraction
 We present \textbf{PathwayML-Ath}, a supervised machine learning framework that
 learns from 538 curated \textit{Arabidopsis} pathway records
 (155~KEGG + 383~AraCyc), grouped into 512 unique gene-set modelling instances,
-and scores arbitrary gene lists for pathway-like coherence.
+and assigns pathway-like scores to 	extit{Arabidopsis} gene sets with sufficient GO annotation coverage.
 Each gene set is encoded as a 69-dimensional vector comprising 60~GO term frequency
 features selected from the primary training data via frequency/variance filtering and mutual-information ranking,
 four pairwise GO Jaccard statistics, and five size/entropy features. In the
-seed-42 reference run, XGBoost achieved nested-CV AUROC $0.837 \pm 0.029$
-and held-out test AUROC/AUPRC $0.874/0.843$. A supplementary held-out comparison of
+seed-42 reference run, XGBoost achieved nested-CV AUROC $0.838 \pm 0.023$
+and held-out test AUROC/AUPRC $0.865/0.842$. A supplementary held-out comparison of
 13~ML methods (Section~\ref{sec:method_comparison}; Table~\ref{tab:method_comparison}) ranked
-CatBoost, XGBoost, Random Forest, Gradient Boosting and LightGBM as the five highest held-out AUROC models
-(test AUROC 0.865--0.879). SHAP analysis identifies
+Gradient Boosting, CatBoost, XGBoost, LightGBM and Random Forest as the five highest held-out AUROC models
+(test AUROC 0.862--0.867). SHAP analysis identifies
 \texttt{jaccard\_mean}, \texttt{go\_entropy} and \texttt{annotated\_gene\_count} as dominant predictors.
 
 \noindent\textbf{Availability:}
@@ -106,7 +106,7 @@ This study focuses on gene sets, but their biological meaning depends on their s
 
 PathwayML-Ath is built around that difference. Rather than trying to prove that a gene module is a new pathway, it asks a narrower question: does the gene set have a functional structure similar to known pathways? We call this property ``pathway-like coherence.'' In this study, we measure coherence by looking at Gene Ontology (GO) annotations and how similar these profiles are among the genes. If a gene set has many members sharing related GO terms, it looks more like a curated pathway than a random collection. In contrast, a mixed set of unrelated genes will show weaker coherence.
 
-This approach is practical for plant functional genomics. Experiments often produce gene modules before pathway information is available. For example, a stress-response study might surface a cluster of genes activated by drought and heat, or a co-expression network a group of genes linked to a specific developmental stage. These modules are interesting, but they are not automatically the same as curated pathways. PathwayML-Ath helps by providing a score. High-scoring modules likely have clear biological meaning and should be studied further. Low-scoring modules might be mixtures, noise, or processes that our current tools cannot capture.
+This approach is practical for plant functional genomics. Experiments often produce gene modules before pathway information is available. For example, a stress-response study might surface a cluster of genes activated by drought and heat, or a co-expression network a group of genes linked to a specific developmental stage. These modules are interesting, but they are not automatically the same as curated pathways. PathwayML-Ath helps by providing a score. High-scoring modules resemble the feature patterns of curated pathways and may be prioritised for follow-up, but their biological relevance still requires independent evidence. Low-scoring modules might be mixtures, noise, or processes that our current tools cannot capture.
 
 \subsection{Curated pathway resources and the incompleteness of pathway catalogues}
 \label{sec:bg_pathway_databases}
@@ -215,7 +215,7 @@ All results reported here are computed directly from source-file parsing of the 
 \subsection{Positioning of PathwayML-Ath}
 \label{sec:lit_positioning}
 
-The literature suggests a clear niche for PathwayML-Ath. Enrichment methods test relationships to existing pathway catalogues. Co-expression methods identify modules but do not directly score pathway-like functional coherence. Graph and foundation models can provide rich representations but require more data and may be less interpretable. PathwayML-Ath fills this gap: it uses public GO annotations to create transparent features, trains a supervised classifier on curated \textit{Arabidopsis} pathways, and produces a pathway-like coherence score for arbitrary gene sets.
+The literature suggests a clear niche for PathwayML-Ath. Enrichment methods test relationships to existing pathway catalogues. Co-expression methods identify modules but do not directly score pathway-like functional coherence. Graph and foundation models can provide rich representations but require more data and may be less interpretable. PathwayML-Ath fills this gap: it uses public GO annotations to create transparent features, trains a supervised classifier on curated \textit{Arabidopsis} pathways, and produces a pathway-like coherence score for \textit{Arabidopsis} gene sets with sufficient GO annotation coverage.
 
 That positioning shapes how the results should be read. A high score indicates resemblance to curated pathways under the GO/Jaccard feature representation; it is not a discovery of a new pathway by itself. A low score does not prove biological irrelevance, because GO annotations may be incomplete and some true biological processes may not be captured by current features. PathwayML-Ath is therefore best used as one component of a workflow that includes enrichment analysis, GO/SHAP interpretation, literature review, network evidence, and experimental validation.
 
@@ -313,7 +313,7 @@ The framework could later be extended to include network features. For example, 
 
 The feature matrix in this thesis is tabular. Each gene set is described by numeric descriptors such as GO term frequencies, Jaccard summaries, entropy, and size. For tabular data, tree ensembles and gradient-boosted decision trees often perform well because they capture non-linear feature interactions without requiring large sample sizes \citep{breiman2001random,friedman2001greedy,chen2016xgboost,ke2017lightgbm,prokhorenkova2018catboost,grinsztajn2022why}. This is why the thesis compares classical, ensemble, boosting, and neural-network models rather than choosing a single classifier.
 
-The comparison is a supporting analysis, not the headline result. The goal is not to crown the single best algorithm, only to show that the chosen model works well with the current features and data. In these tests the top five models by AUROC---CatBoost, XGBoost, Random Forest, Gradient Boosting, and LightGBM---are all tree-based. That supports using a tree model downstream and indicates the result does not hinge on one algorithm.
+The comparison is a supporting analysis, not the headline result. The goal is not to crown the single best algorithm, only to show that the chosen model works well with the current features and data. In these tests the top five models by AUROC---Gradient Boosting, CatBoost, XGBoost, LightGBM, and Random Forest---are all tree-based. That supports using a tree model downstream and indicates the result does not hinge on one algorithm.
 
 \subsection{Explainability as a requirement for biological use}
 \label{sec:lit_xai_extended}
@@ -454,7 +454,7 @@ Five positive-to-negative ratios ($k \in \{1,2,3,4,5\}$) were compared within th
 \frac{\mathrm{AUPRC}-\pi}{1-\pi}, \qquad \pi=\frac{1}{1+k},
 \label{eq:normalized_auprc}
 \end{equation}
-where $\pi$ is the positive fraction in the validation fold. The 1:1 ratio was used for the final held-out analysis because it had the highest mean normalised AUPRC (0.568) and F1 (0.785). Mean AUROC differed little across ratios: the largest change from 1:1 was 0.012, or 0.54 pooled SD.
+where $\pi$ is the positive fraction in the validation fold. The 1:1 ratio was used for the final held-out analysis because it had the highest mean normalised AUPRC (0.561) and F1 (0.786). Mean AUROC differed little across ratios: the largest change from 1:1 was 0.012, or 0.65 pooled SD.
 
 \begin{figure}[H]
 \centering
@@ -474,11 +474,11 @@ Values are mean $\pm$ SD over 15 folds. The random AUPRC baseline equals the pos
 \toprule
 \textbf{Ratio} & \textbf{AUROC} & \textbf{Raw AUPRC} & \textbf{Baseline} & \textbf{Normalised AUPRC} & \textbf{F1} \\
 \midrule
-1:1 & $0.837 \pm 0.029$ & 0.784 & 0.500 & $\mathbf{0.568 \pm 0.077}$ & \textbf{0.785} \\
-1:2 & $0.831 \pm 0.017$ & 0.647 & 0.333 & $0.470 \pm 0.061$ & 0.662 \\
-1:3 & $0.841 \pm 0.018$ & 0.573 & 0.250 & $0.431 \pm 0.076$ & 0.610 \\
-1:4 & $0.845 \pm 0.014$ & 0.510 & 0.200 & $0.388 \pm 0.060$ & 0.551 \\
-1:5 & $0.848 \pm 0.009$ & 0.461 & 0.167 & $0.353 \pm 0.044$ & 0.514 \\
+1:1 & $0.838 \pm 0.023$ & 0.780 & 0.500 & $\mathbf{0.561 \pm 0.074}$ & \textbf{0.786} \\
+1:2 & $0.825 \pm 0.015$ & 0.631 & 0.333 & $0.447 \pm 0.054$ & 0.657 \\
+1:3 & $0.841 \pm 0.019$ & 0.572 & 0.250 & $0.429 \pm 0.058$ & 0.601 \\
+1:4 & $0.845 \pm 0.014$ & 0.504 & 0.200 & $0.380 \pm 0.056$ & 0.557 \\
+1:5 & $0.844 \pm 0.007$ & 0.452 & 0.167 & $0.343 \pm 0.042$ & 0.505 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -513,7 +513,7 @@ LightGBM~\citep{ke2017lightgbm}, CatBoost~\citep{prokhorenkova2018catboost}. The
 
 For the supplementary 13-method comparison, models were fit on the same seed-42 training split and evaluated on the outer test set. The main XGBoost/RF/LR reference models used three repeats of five-fold CV within the primary training positives, stratified by database source. Controls were regenerated independently from the fold-training and fold-validation pathways. Variance filtering and mutual-information ranking were repeated inside each fold, and all three reference models used that fold's selected 60 terms. Analyses were performed in Python~3.13 with scikit-learn~1.8 \citep{pedregosa2011scikit} and XGBoost~3.2 \citep{chen2016xgboost}.
 
-ORA was not included as a row in Table~\ref{tab:method_comparison}, because the generated comparison table contains machine-learning classifiers only. Instead, ORA is used as an enrichment-analysis context for interpreting submitted gene sets and for positioning PathwayML-Ath relative to conventional pathway analysis. When ORA is applied in this project, it uses a Fisher exact test against the curated pathway collection with a background of 28,998 GO-annotated genes.
+ORA was not run as part of the present benchmark and was not included in Table~\ref{tab:method_comparison}, which contains machine-learning classifiers only. It is discussed as a complementary analysis for future applications. A submitted gene set could be tested for overlap with curated pathways using Fisher's exact test and multiple-testing correction, then interpreted alongside the PathwayML-Ath score.
 
 
 
@@ -564,7 +564,7 @@ The pairwise Jaccard features are central because they measure a property that G
 
 The mean Jaccard statistic captures average similarity among genes, while the minimum flags whether any gene pair is functionally far apart. The maximum and standard deviation then describe local high-similarity structure and whether similarity is uniform or concentrated in a subset of pairs. Together, these features provide a compact summary of internal GO-based topology. The approach is graph-free because it summarises pairwise GO similarities directly and does not require an external interaction network.
 
-The computation uses at most 15 genes per set for pairwise comparisons to keep computation costs low. This is a practical simplification. Large KEGG maps have many genes, and comparing every pair takes too much computing power. We take the first 15 genes in each set's stored order, so the same set always gives the same result, which saves computing time while keeping the features reproducible. Because of this simplification, model scores should be seen as estimates of pathway coherence, not exact measurements of every possible gene pair.
+Pairwise Jaccard uses every GO-annotated gene when $|G^*|\leq30$. For larger sets, 30 genes are sampled without replacement. The sampling seed is derived from the SHA256 hash of the complete sorted $G^*$ membership and a fixed algorithm identifier. The same gene set therefore always uses the same subset, regardless of stored gene order or the order in which samples are processed. This cap keeps large KEGG maps tractable while avoiding the locus-order bias of taking the first genes in a sorted list.
 
 \subsection{Model-selection rationale and computational constraints}
 \label{sec:methods_model_rationale}
@@ -580,7 +580,7 @@ For this reason, the held-out comparison is best read as evidence that tree-base
 \subsection{Held-out model comparison}
 \label{sec:res_model_comparison}
 
-Table~\ref{tab:method_comparison} summarises the held-out performance of all 13 methods on the seed-42 split. The five highest-AUROC models---CatBoost (0.879), XGBoost (0.874), Random Forest (0.874), Gradient Boosting (0.873), and LightGBM (0.865)---are all tree-based. Logistic Regression achieved 0.796 as a linear baseline. Because this comparison uses one outer-test split, it provides model-selection context rather than a definitive algorithm ranking. In the repeated nested-CV analysis of the three reference models, mean AUROC was $0.837 \pm 0.029$ for XGBoost, $0.849 \pm 0.021$ for Random Forest, and $0.801 \pm 0.028$ for Logistic Regression (mean $\pm$ SD over 15 folds).
+Table~\ref{tab:method_comparison} summarises the held-out performance of all 13 methods on the seed-42 split. The five highest-AUROC models---Gradient Boosting (0.867), CatBoost (0.865), XGBoost (0.865), LightGBM (0.862), and Random Forest (0.862)---are all tree-based. Logistic Regression achieved 0.795 as a linear baseline. Because this comparison uses one outer-test split, it provides model-selection context rather than a definitive algorithm ranking. In the repeated nested-CV analysis of the three reference models, mean AUROC was $0.838 \pm 0.023$ for XGBoost, $0.844 \pm 0.013$ for Random Forest, and $0.803 \pm 0.028$ for Logistic Regression (mean $\pm$ SD over 15 folds).
 
 \begin{table}[H]
 \centering
@@ -591,19 +591,19 @@ Table~\ref{tab:method_comparison} summarises the held-out performance of all 13 
 \toprule
 \textbf{Rank} & \textbf{Method} & \textbf{Test AUROC} & \textbf{AUPRC} & \textbf{F1} & \textbf{Brier$\downarrow$} & \textbf{Time (s)} \\
 \midrule
-1 & CatBoost & 0.879 & 0.855 & 0.793 & 0.139 & 0.44 \\
-2 & \textbf{XGBoost} & \textbf{0.874} & \textbf{0.843} & 0.809 & 0.140 & 0.84 \\
-3 & Random Forest & 0.874 & 0.841 & 0.828 & 0.145 & 0.44 \\
-4 & Gradient Boosting & 0.873 & 0.839 & 0.808 & 0.143 & 0.78 \\
-5 & LightGBM & 0.865 & 0.824 & 0.807 & 0.144 & 1.16 \\
-6 & AdaBoost & 0.862 & 0.835 & 0.796 & 0.212 & 0.26 \\
-7 & Extra Trees & 0.853 & 0.827 & 0.813 & 0.164 & 0.30 \\
-8 & RBF SVM & 0.839 & 0.810 & 0.774 & 0.168 & 0.09 \\
-9 & Linear SVM & 0.810 & 0.786 & 0.759 & 0.185 & 0.16 \\
-10 & k-NN (k=7) & 0.809 & 0.748 & 0.751 & 0.173 & 0.07 \\
-11 & Logistic Regression & 0.796 & 0.757 & 0.752 & 0.181 & 0.01 \\
-12 & MLP & 0.790 & 0.760 & 0.731 & 0.184 & 0.02 \\
-13 & Gaussian Naive Bayes & 0.733 & 0.668 & 0.732 & 0.268 & 0.00 \\
+1 & Gradient Boosting & 0.867 & 0.843 & 0.789 & 0.146 & 0.78 \\
+2 & CatBoost & 0.865 & 0.841 & 0.781 & 0.144 & 0.46 \\
+3 & \textbf{XGBoost} & \textbf{0.865} & \textbf{0.842} & 0.784 & 0.147 & 0.82 \\
+4 & LightGBM & 0.862 & 0.849 & 0.793 & 0.152 & 1.18 \\
+5 & Random Forest & 0.862 & 0.831 & 0.802 & 0.150 & 0.48 \\
+6 & Extra Trees & 0.843 & 0.812 & 0.800 & 0.166 & 0.30 \\
+7 & AdaBoost & 0.828 & 0.780 & 0.764 & 0.215 & 0.26 \\
+8 & RBF SVM & 0.820 & 0.773 & 0.765 & 0.175 & 0.09 \\
+9 & Linear SVM & 0.807 & 0.779 & 0.777 & 0.184 & 0.18 \\
+10 & Logistic Regression & 0.795 & 0.746 & 0.767 & 0.181 & 0.01 \\
+11 & k-NN (k=7) & 0.791 & 0.717 & 0.732 & 0.181 & 0.03 \\
+12 & MLP & 0.746 & 0.734 & 0.716 & 0.205 & 0.02 \\
+13 & Gaussian Naive Bayes & 0.732 & 0.668 & 0.724 & 0.268 & 0.00 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -617,11 +617,11 @@ efficiency cores) and 16~GB of memory. The system used macOS 26.4.1 and Python
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{FigC_roc_pr.png}
-\caption{\textbf{ROC and precision--recall curves for the reference XGBoost model} on the seed-42 outer-test split ($n=206$). Left: the ROC curve has AUROC $=0.874$. Right: the precision--recall curve has AUPRC $=0.843$, read against the random baseline of $0.500$ at the 1:1 ratio.}
+\caption{\textbf{ROC and precision--recall curves for the reference XGBoost model} on the seed-42 outer-test split ($n=206$). Left: the ROC curve has AUROC $=0.865$. Right: the precision--recall curve has AUPRC $=0.842$, read against the random baseline of $0.500$ at the 1:1 ratio.}
 \label{fig:roc_pr}
 \end{figure}
 
-Figure~\ref{fig:roc_pr} shows the two curves behind these summary numbers. The ROC curve reaches an AUROC of $0.874$, and the precision--recall curve gives an AUPRC of $0.843$ above the $0.500$ random baseline. At the default $0.5$ threshold the confusion matrix (Figure~\ref{fig:confusion}) records 89 true positives and 14 false negatives, with 75 true negatives and 28 false positives; precision is $0.761$, recall $0.864$, and F1 $0.809$.
+Figure~\ref{fig:roc_pr} shows the two curves behind these summary numbers. The ROC curve reaches an AUROC of $0.865$, and the precision--recall curve gives an AUPRC of $0.842$ above the $0.500$ random baseline. At the default $0.5$ threshold the confusion matrix (Figure~\ref{fig:confusion}) records 87 true positives and 16 false negatives, with 71 true negatives and 32 false positives; precision is $0.731$, recall $0.845$, and F1 $0.784$.
 
 \begin{figure}[H]
 \centering
@@ -630,7 +630,7 @@ Figure~\ref{fig:roc_pr} shows the two curves behind these summary numbers. The R
 \label{fig:confusion}
 \end{figure}
 
-Breaking the held-out scores down by gene-set type (Figure~\ref{fig:score_by_type}) shows where the difficulty lies. Median scores are lowest for random and shuffled controls ($0.010$ and $0.007$) and highest for curated pathways ($0.809$); the two hard negatives fall in between, at $0.686$ for partial pathways and $0.293$ for cross-pathway mixtures. All 28 false positives come from these two groups: 20 partial and 8 cross-pathway controls. Against random and shuffled controls alone, AUROC is $0.998$ and $0.997$, respectively; it falls to $0.653$ for partial pathways and $0.846$ for cross-pathway mixtures.
+Breaking the held-out scores down by gene-set type (Figure~\ref{fig:score_by_type}) shows where the difficulty lies. Median scores are lowest for random and shuffled controls ($0.009$ and $0.010$) and highest for curated pathways ($0.794$); the two hard negatives fall in between, at $0.684$ for partial pathways and $0.510$ for cross-pathway mixtures. All 32 false positives come from these two groups: 19 partial and 13 cross-pathway controls. Against random and shuffled controls alone, AUROC is $0.996$ and $0.997$, respectively; it falls to $0.656$ for partial pathways and $0.809$ for cross-pathway mixtures.
 
 \begin{figure}[H]
 \centering
@@ -646,7 +646,7 @@ The nested CV runs also show how much the selected GO terms depend on the
 training fold. For the 1:1 ratio, the mean pairwise Jaccard similarity between
 the 15 selected-term sets was 0.123. Three terms were selected in all 15 folds,
 and 15 terms appeared in at least half of the folds. XGBoost AUROC was more
-stable than the term lists ($0.837 \pm 0.029$). The model therefore gives
+stable than the term lists ($0.838 \pm 0.023$). The model therefore gives
 reasonably stable predictions without producing a fixed biological GO
 signature.
 
@@ -655,7 +655,7 @@ signature.
 
 To understand what drives the predictions, we applied SHAP TreeExplainer \citep{lundberg2017unified} to the held-out test set. For each sample, SHAP values $\phi_i$ (log-odds units) quantify the contribution of feature $i$; global importance is the mean $|\phi_i|$ across all samples (Table~\ref{tab:shap}; Figure~\ref{fig:shap}).
 
-The three most important features are mean Jaccard similarity, GO-profile entropy, and annotated gene count. That pairwise GO similarity ranks first supports the core hypothesis: pathway genes share GO annotations more than random collections, and this overlap is measurable from public databases alone. Co-expression analyses arrive at gene relatedness from a different angle, grouping genes by correlated expression \citep{langfelder2008wgcna,liesecke2018ranking}; here the shared annotation is measured directly, as an explicit learnable feature rather than inferred from expression.
+The three most important features are mean Jaccard similarity, GO-profile entropy, and annotated gene count. The high importance of \texttt{jaccard\_mean} is consistent with the intended feature design and shows that the fitted model relies strongly on pairwise GO annotation overlap. Co-expression analyses arrive at gene relatedness from a different angle, grouping genes by correlated expression \citep{langfelder2008wgcna,liesecke2018ranking}; here the shared annotation is measured directly, as an explicit learnable feature rather than inferred from expression.
 
 \begin{figure}[H]
 \centering
@@ -677,16 +677,16 @@ Importance is mean absolute SHAP value for tree-based attribution.}
 \toprule
 \textbf{Rank} & \textbf{Feature} & \textbf{Type} & \textbf{Importance} \\
 \midrule
-1 & \texttt{jaccard\_mean} & Jaccard & 0.732 \\
-2 & \texttt{go\_entropy} & size/statistic & 0.560 \\
-3 & \texttt{annotated\_gene\_count} & size/statistic & 0.454 \\
-4 & \texttt{GO:0008150} & GO term & 0.383 \\
-5 & \texttt{jaccard\_std} & Jaccard & 0.326 \\
-6 & \texttt{mean\_go\_per\_gene} & size/statistic & 0.323 \\
-7 & \texttt{GO:0005737} & GO term & 0.266 \\
-8 & \texttt{GO:0009507} & GO term & 0.213 \\
-9 & \texttt{GO:0005829} & GO term & 0.178 \\
-10 & \texttt{GO:0005739} & GO term & 0.156 \\
+1 & \texttt{jaccard\_mean} & Jaccard & 0.760 \\
+2 & \texttt{go\_entropy} & size/statistic & 0.532 \\
+3 & \texttt{annotated\_gene\_count} & size/statistic & 0.523 \\
+4 & \texttt{GO:0008150} & GO term & 0.381 \\
+5 & \texttt{mean\_go\_per\_gene} & size/statistic & 0.337 \\
+6 & \texttt{jaccard\_std} & Jaccard & 0.315 \\
+7 & \texttt{GO:0005737} & GO term & 0.287 \\
+8 & \texttt{GO:0009507} & GO term & 0.216 \\
+9 & \texttt{GO:0005829} & GO term & 0.205 \\
+10 & \texttt{GO:0005739} & GO term & 0.193 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -695,7 +695,7 @@ Importance is mean absolute SHAP value for tree-based attribution.}
 \subsection{Feature-group ablation}
 \label{sec:res_ablation}
 
-To measure the contribution of each feature group, we trained XGBoost on subsets of the 69 features using the same held-out split (Table~\ref{tab:s3_ablation}). Using any one group alone costs 0.064--0.096 AUROC, whereas dropping a single group costs only 0.025--0.036. The full 69-feature model has the highest AUROC, with the surviving groups partly covering for whichever one is left out.
+To measure the contribution of each feature group, we trained XGBoost on subsets of the 69 features using the same held-out split (Table~\ref{tab:s3_ablation}). Using any one group alone costs 0.055--0.133 AUROC, whereas dropping a single group costs only 0.026--0.045. The full 69-feature model has the highest AUROC, with the surviving groups partly covering for whichever one is left out.
 
 \begin{table}[H]
 \centering
@@ -708,13 +708,13 @@ $\Delta$ is the difference from the full model's test AUROC.}
 \toprule
 \textbf{Configuration} & $d$ & \textbf{Test AUROC} & \textbf{AUPRC} & $\boldsymbol{\Delta}$ AUROC \\
 \midrule
-Full model & 69 & 0.874 & 0.843 & 0.000 \\
-GO only & 60 & 0.810 & 0.763 & $-$0.064 \\
-Jaccard only & 4 & 0.783 & 0.732 & $-$0.091 \\
-Size/entropy only & 5 & 0.778 & 0.712 & $-$0.096 \\
-$-$GO frequency & 9 & 0.849 & 0.820 & $-$0.025 \\
-$-$Jaccard & 65 & 0.838 & 0.815 & $-$0.036 \\
-$-$Size/entropy & 64 & 0.848 & 0.777 & $-$0.026 \\
+Full model & 69 & 0.865 & 0.842 & 0.000 \\
+GO only & 60 & 0.810 & 0.763 & $-$0.055 \\
+Jaccard only & 4 & 0.732 & 0.710 & $-$0.133 \\
+Size/entropy only & 5 & 0.778 & 0.712 & $-$0.087 \\
+$-$GO frequency & 9 & 0.820 & 0.782 & $-$0.045 \\
+$-$Jaccard & 65 & 0.838 & 0.815 & $-$0.026 \\
+$-$Size/entropy & 64 & 0.837 & 0.794 & $-$0.028 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -723,24 +723,24 @@ $-$Size/entropy & 64 & 0.848 & 0.777 & $-$0.026 \\
 \section{Discussion}
 \label{sec:discussion}
 
-The results show that GO-derived features can separate curated \textit{Arabidopsis} pathway instances from constructed controls with moderate-to-good accuracy (test AUROC 0.874, AUPRC 0.843). Some controls still contain real biological signals, making this benchmark harder than using purely random data. The nested-CV and ablation results show that the performance is not explained by one split or one feature group alone.
+The results show that GO-derived features can separate curated \textit{Arabidopsis} pathway instances from constructed controls with moderate-to-good accuracy (test AUROC 0.865, AUPRC 0.842). Some controls still contain real biological signals, making this benchmark harder than using purely random data. The nested-CV and ablation results show that the performance is not explained by one split or one feature group alone.
 
 \subsection{Understanding the performance level}
 \label{sec:disc_performance}
 
-The held-out AUROC of 0.874 should be read in light of the benchmark design. If the negative class contained only random gene sets, performance would be higher but biologically less meaningful. The present benchmark mixes four negative types---random, shuffled, partial, and cross-pathway---each testing a different failure mode. Partial pathways retain genuine functional coherence because they are subsets of real pathways. Their median score of 0.686 and negative-type AUROC of 0.653 show that they are the main boundary case. The overall result reflects the difficulty of distinguishing complete curated pathways from partially coherent alternatives.
+The held-out AUROC of 0.865 should be read in light of the benchmark design. If the negative class contained only random gene sets, performance would be higher but biologically less meaningful. The present benchmark mixes four negative types---random, shuffled, partial, and cross-pathway---each testing a different failure mode. Partial pathways retain genuine functional coherence because they are subsets of real pathways. Their median score of 0.684 and negative-type AUROC of 0.656 show that they are the main boundary case. The overall result reflects the difficulty of distinguishing complete curated pathways from partially coherent alternatives.
 
-Raw AUPRC cannot be compared across class ratios without considering its random baseline \citep{saito2015precision}. The ratio comparison was therefore run only within the outer training set, with fold-specific GO selection. The 1:1 ratio had the highest mean normalised AUPRC (0.568) and F1 (0.785). Mean AUROC ranged from 0.831 to 0.848, and the largest difference from 1:1 was only 0.54 pooled SD. Taken together, the two metrics pointed to 1:1 for the final outer-test analysis. Normalisation adjusts AUPRC relative to its random baseline, but it does not make precision--recall performance invariant to prevalence.
+Raw AUPRC cannot be compared across class ratios without considering its random baseline \citep{saito2015precision}. The ratio comparison was therefore run only within the outer training set, with fold-specific GO selection. The 1:1 ratio had the highest mean normalised AUPRC (0.561) and F1 (0.786). Mean AUROC ranged from 0.825 to 0.845, and the largest difference from 1:1 was 0.65 pooled SD. Taken together, the two metrics pointed to 1:1 for the final outer-test analysis. Normalisation adjusts AUPRC relative to its random baseline, but it does not make precision--recall performance invariant to prevalence.
 
 \subsection{Feature-selection variation}
 \label{sec:disc_feature_variation}
 
-The selected GO terms changed across CV folds. For the 1:1 analysis, the mean pairwise Jaccard similarity between term sets was 0.123, and only three terms appeared in every fold. The corresponding AUROC SD was 0.029. This suggests that several GO subsets can support similar predictive performance. The selected terms should therefore be read as features of the fitted model, not as a universal biological signature.
+The selected GO terms changed across CV folds. For the 1:1 analysis, the mean pairwise Jaccard similarity between term sets was 0.123, and only three terms appeared in every fold. The corresponding AUROC SD was 0.023. This suggests that several GO subsets can support similar predictive performance. The selected terms should therefore be read as features of the fitted model, not as a universal biological signature.
 
 \subsection{Interpreting SHAP features and broad GO terms}
 \label{sec:disc_shap_interpretation}
 
-\texttt{jaccard\_mean} dominates the SHAP ranking (0.732), confirming that the fitted model leans heavily on pairwise GO overlap. Behind it, \texttt{go\_entropy} (0.560) tracks whether the selected-GO profile is concentrated on a few terms or spread across many, and \texttt{annotated\_gene\_count} (0.454) matters because small sets provide limited pairwise evidence while very large sets often correspond to broad KEGG overview maps. These values are mean absolute SHAP contributions in model-output units and should be compared within this fitted model rather than interpreted as probabilities.
+\texttt{jaccard\_mean} dominates the SHAP ranking (0.760), showing that the fitted model leans heavily on pairwise GO overlap. Behind it, \texttt{go\_entropy} (0.532) tracks whether the selected-GO profile is concentrated on a few terms or spread across many, and \texttt{annotated\_gene\_count} (0.523) matters because small sets provide limited pairwise evidence while very large sets often correspond to broad KEGG overview maps. These values are mean absolute SHAP contributions in model-output units and should be compared within this fitted model rather than interpreted as probabilities.
 
 Among the GO term features, GO:0008150 (biological process) ranks fourth overall, GO:0005737 (cytoplasm) ranks seventh, and GO:0009507 (chloroplast) ranks eighth. GO:0008150 is broad, and its SHAP contribution may partly reflect annotation depth rather than a specific process. Specific GO terms and Jaccard features should therefore be considered alongside broad terms and size-related features.
 
@@ -798,7 +798,7 @@ Future work should keep the benchmark and interpretation rules fixed when new fe
 \section{Conclusion}
 \label{sec:conclusion}
 
-PathwayML-Ath is a supervised framework that scores gene sets for pathway-like coherence in \textit{Arabidopsis thaliana}. The 538 KEGG and AraCyc source records were grouped into 512 unique gene-set modelling instances and encoded as 69-dimensional GO annotation vectors. The XGBoost reference model achieves nested-CV AUROC $0.837 \pm 0.029$ and outer-test AUROC $0.874$ (AUPRC $0.843$). SHAP analysis identifies pairwise GO Jaccard similarity, annotation entropy, and annotated gene count as the main predictors. The score is meant to prioritise candidates for follow-up, read together with ORA/GSEA results; on its own it is not evidence of a new pathway. All scripts, generated tables, figures, and provenance metadata are provided in the project archive.
+PathwayML-Ath is a supervised framework that scores gene sets for pathway-like coherence in \textit{Arabidopsis thaliana}. The 538 KEGG and AraCyc source records were grouped into 512 unique gene-set modelling instances and encoded as 69-dimensional GO annotation vectors. The XGBoost reference model achieves nested-CV AUROC $0.838 \pm 0.023$ and outer-test AUROC $0.865$ (AUPRC $0.842$). SHAP analysis identifies pairwise GO Jaccard similarity, annotation entropy, and annotated gene count as the main predictors. The score can be combined with ORA or GSEA in downstream applications; on its own it is not evidence of a new pathway. All scripts, generated tables, figures, and provenance metadata are provided in the project archive.
 
 
 \appendix
@@ -830,7 +830,7 @@ PathwayML-Ath is a supervised framework that scores gene sets for pathway-like c
   \item Match each LaTeX figure to a code-generated figure or label it as schematic.
 \end{enumerate}
 
-The project archive contains generated tables, figures, software versions, and provenance metadata corresponding to the source-file analysis (538 source records, 512 modelling groups, 69 features, XGBoost outer-test AUROC 0.874).
+The project archive contains generated tables, figures, software versions, and provenance metadata corresponding to the source-file analysis (538 source records, 512 modelling groups, 69 features, XGBoost outer-test AUROC 0.865).
 
 \section{Appendix C: Metrics}
 \label{app:metrics}
