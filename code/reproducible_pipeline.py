@@ -64,7 +64,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import fisher_exact
 from sklearn.base import clone
 from sklearn.ensemble import (
     AdaBoostClassifier,
@@ -142,6 +141,13 @@ GO_SELECTION_MODE = "outer_train_fixed60_with_nested_ratio_cv"
 MODEL_COMPARISON_PROTOCOL = "heldout_only"
 SCALE_POS_WEIGHT_RULE = "dynamic_n_negative_train_over_n_positive_train"
 SCALE_POS_WEIGHT_LOG: List[Dict[str, Any]] = []
+
+# Pairwise Jaccard uses every annotated gene for small and medium gene sets.
+# Larger sets use a deterministic local sample so feature construction remains
+# tractable without favouring low-sorting Arabidopsis locus identifiers.
+JACCARD_EXACT_MAX_GENES = 30
+JACCARD_SAMPLE_SIZE = 30
+JACCARD_SAMPLING_SALT = "pathwayml-ath-jaccard-cap30-v1"
 
 
 def configure_output_dir(out_dir: str | Path) -> None:
@@ -345,6 +351,37 @@ def jaccard(a: set, b: set) -> float:
     """Jaccard similarity coefficient; two empty sets are treated as identical (0.0)."""
     union = a | b
     return len(a & b) / len(union) if union else 0.0
+
+
+def select_genes_for_jaccard(genes: Sequence[str]) -> List[str]:
+    """Return the deterministic gene subset used for pairwise Jaccard.
+
+    Gene sets with at most ``JACCARD_EXACT_MAX_GENES`` annotated members use
+    every member.  For larger sets, a seed derived from the complete sorted
+    gene membership and a versioned algorithm salt drives a local RNG.  The
+    local generator does not change Python's global random state, and the
+    selected subset is therefore independent of record order and call order.
+    """
+    ordered_genes = sorted(set(genes))
+    if len(ordered_genes) <= JACCARD_EXACT_MAX_GENES:
+        return ordered_genes
+
+    payload = "\n".join([JACCARD_SAMPLING_SALT, *ordered_genes]).encode("utf-8")
+    seed = int.from_bytes(hashlib.sha256(payload).digest()[:8], "big", signed=False)
+    selected = random.Random(seed).sample(ordered_genes, JACCARD_SAMPLE_SIZE)
+    return sorted(selected)
+
+
+def jaccard_feature_protocol() -> Dict[str, Any]:
+    """Return the pairwise-GO sampling settings recorded with each run."""
+    return {
+        "small_gene_sets": f"all annotated genes when |G*| <= {JACCARD_EXACT_MAX_GENES}",
+        "large_gene_sets": f"sample {JACCARD_SAMPLE_SIZE} annotated genes without replacement",
+        "sampling_seed": "SHA256 of sorted complete G* membership and algorithm salt",
+        "sampling_salt": JACCARD_SAMPLING_SALT,
+        "input_order_invariant": True,
+        "global_rng_state_unchanged": True,
+    }
 
 
 def scale_pos_weight_from_labels(
@@ -1278,8 +1315,10 @@ def build_feature_vector(genes: Sequence[str], selected_go: Sequence[str], gene_
       [67]     go_size_std:      std of per-gene GO annotation counts
       [68]     mean_go_per_gene: mean number of GO terms per gene
 
-    For large gene sets, pairwise Jaccard is computed on a subsample of
-    min(n, 15) genes to keep the computation tractable.
+    Pairwise Jaccard uses all annotated genes when ``|G*| <= 30``.  Larger
+    sets use 30 genes selected by :func:`select_genes_for_jaccard`, whose
+    gene-set-derived seed removes dependence on stored gene order while keeping
+    the calculation tractable.
     """
     valid = [g for g in genes if g in gene_go]
     if not valid:
@@ -1288,7 +1327,12 @@ def build_feature_vector(genes: Sequence[str], selected_go: Sequence[str], gene_
     n = len(valid)
     freq = [sum(1 for s in go_sets if term in s) / n for term in selected_go]
 
-    pairs = [jaccard(go_sets[i], go_sets[j]) for i, j in combinations(range(min(n, 15)), 2)]
+    jaccard_genes = select_genes_for_jaccard(valid)
+    jaccard_go_sets = [set(gene_go.get(g, set())) for g in jaccard_genes]
+    pairs = [
+        jaccard(jaccard_go_sets[i], jaccard_go_sets[j])
+        for i, j in combinations(range(len(jaccard_go_sets)), 2)
+    ]
     sims = pairs if pairs else [0.0]
     freq_arr = np.array(freq, dtype=np.float64)
     if float(freq_arr.sum()) <= 0.0:
@@ -2832,7 +2876,10 @@ def run_importance(
     return rows
 
 
-def save_primary_context_outputs(context: PrimaryContext) -> None:
+def save_primary_context_outputs(
+    context: PrimaryContext,
+    gene_go: Mapping[str, set],
+) -> None:
     """Persist the primary split, negative provenance, and GO-selection audit.
 
     JSON keeps the complete sample records (including gene IDs), while the CSV
@@ -2854,6 +2901,7 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
             "train_negative_seed": context.train_negative_seed,
             "test_negative_seed": context.test_negative_seed,
             "feature_selection_scope": "outer_train_only",
+            "jaccard_feature_protocol": jaccard_feature_protocol(),
             "selected_go_sha256": selected_go_sha256,
             "primary_split_sha256": split_sha256,
         },
@@ -2868,6 +2916,7 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
     test_positive_ids = {str(record["id"]) for record in context.test_positive_records}
     negative_rows: List[Dict[str, Any]] = []
     split_audit_rows: List[Dict[str, Any]] = []
+    jaccard_audit_rows: List[Dict[str, Any]] = []
     for split_name, records, own_positive_ids, other_positive_ids in [
         ("train", context.train_records, train_positive_ids, test_positive_ids),
         ("test", context.test_records, test_positive_ids, train_positive_ids),
@@ -2899,6 +2948,32 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
                 }
             )
 
+        # Record which primary samples use exact pairwise comparisons and
+        # which use the deterministic cap-30 approximation.  The sampled gene
+        # IDs remain available in main_split.json; hashes keep this CSV compact.
+        for record in records:
+            annotated_genes = sorted(
+                {gene for gene in record["genes"] if gene in gene_go}
+            )
+            sampled_genes = select_genes_for_jaccard(annotated_genes)
+            n_all = len(annotated_genes)
+            n_used = len(sampled_genes)
+            jaccard_audit_rows.append(
+                {
+                    "sample_id": record["id"],
+                    "split": split_name,
+                    "label": int(record["label"]),
+                    "gene_set_type": record.get("negative_type", "curated_pathway"),
+                    "annotated_gene_count": n_all,
+                    "jaccard_gene_count": n_used,
+                    "jaccard_mode": "exact" if n_all <= JACCARD_EXACT_MAX_GENES else "hash_sampled",
+                    "all_pair_count": n_all * (n_all - 1) // 2,
+                    "evaluated_pair_count": n_used * (n_used - 1) // 2,
+                    "complete_gene_set_sha256": stable_json_sha256(annotated_genes),
+                    "jaccard_subset_sha256": stable_json_sha256(sampled_genes),
+                }
+            )
+
         type_counts = Counter(record["negative_type"] for record in negatives)
         split_audit_rows.append(
             {
@@ -2924,6 +2999,7 @@ def save_primary_context_outputs(context: PrimaryContext) -> None:
 
     save_table(TABLE_DIR / "negative_metadata.csv", negative_rows)
     save_table(TABLE_DIR / "main_split_audit.csv", split_audit_rows)
+    save_table(TABLE_DIR / "jaccard_sampling_audit.csv", jaccard_audit_rows)
 
 
 def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
@@ -2948,6 +3024,7 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
             "go_selection_mode": GO_SELECTION_MODE,
             "feature_selection_scope": "outer_train_only",
             "modelling_unit": "unique_exact_gene_set_group",
+            "jaccard_feature_protocol": jaccard_feature_protocol(),
         },
     )
     rows = [
@@ -2999,6 +3076,7 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
         "n_raw_go_terms": len(bundle.go_genes),
         "n_selected_go": len(bundle.selected_go),
         "n_features": len(bundle.feature_names),
+        "jaccard_feature_protocol": jaccard_feature_protocol(),
     }
     pathway_member_genes = {
         gene
@@ -3334,6 +3412,7 @@ def save_result_summary(
         "n_test_positive": len(context.test_positive_records),
         "n_train_total": len(context.train_records),
         "n_test_total": len(context.test_records),
+        "jaccard_feature_protocol": jaccard_feature_protocol(),
         "selected_go_sha256": stable_json_sha256(context.selected_go),
         "primary_split_sha256": primary_split_sha256(context),
         "sections_run": list(sections),
@@ -3413,6 +3492,7 @@ def save_manifest(
             "ratio_cv": "fold_train_only_for_variance_and_mutual_information",
             "frequency_prefilter": "label_free_full_go_background",
         },
+        "jaccard_feature_protocol": jaccard_feature_protocol(),
         "primary_split_unit": "unique_exact_gene_set_group",
         "primary_split_stratification": "database_source",
         "negative_source_isolation": True,
@@ -3669,7 +3749,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         f"{len(bundle.selected_go)} selected GO terms, {len(bundle.feature_names)} features.",
         flush=True,
     )
-    save_primary_context_outputs(context)
+    save_primary_context_outputs(context, bundle.gene_go)
     save_processed_data(bundle, context)
 
     sections = args.sections
@@ -3747,7 +3827,7 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
     if args.dataset_source == "raw":
         save_kegg_filter_audit(Path(args.raw_dir))
     context = prepare_primary_context(bundle, ratio=args.primary_ratio)
-    save_primary_context_outputs(context)
+    save_primary_context_outputs(context, bundle.gene_go)
     save_processed_data(bundle, context)
     save_manifest(
         args,
@@ -3805,7 +3885,7 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
     if args.dataset_source == "raw":
         save_kegg_filter_audit(Path(args.raw_dir))
     context = prepare_primary_context(bundle, ratio=args.primary_ratio)
-    save_primary_context_outputs(context)
+    save_primary_context_outputs(context, bundle.gene_go)
     save_processed_data(bundle, context)
     save_manifest(args, bundle, context, sections)
     print(f"\nDone. Outputs written to {OUT_DIR}")

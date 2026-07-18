@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import sys
 import unittest
 from pathlib import Path
@@ -177,6 +178,39 @@ class ReproduciblePipelineTests(unittest.TestCase):
         self.assertIn("log_annotated_gene_count", self.context.feature_names)
         self.assertNotIn("pathway_size", self.context.feature_names)
         self.assertNotIn("log_size", self.context.feature_names)
+
+    def test_jaccard_sampling_is_order_independent_and_local(self) -> None:
+        genes = sorted(self.bundle.gene_go)[:40]
+        selected = pipeline.select_genes_for_jaccard(genes)
+        self.assertEqual(len(selected), pipeline.JACCARD_SAMPLE_SIZE)
+        self.assertEqual(selected, pipeline.select_genes_for_jaccard(list(reversed(genes))))
+        self.assertTrue(set(selected).issubset(genes))
+
+        # Sampling uses a local Random instance and must not perturb negative
+        # generation or any other caller that relies on Python's global RNG.
+        random.seed(20260718)
+        state_before = random.getstate()
+        pipeline.select_genes_for_jaccard(genes)
+        self.assertEqual(state_before, random.getstate())
+
+    def test_jaccard_uses_all_genes_up_to_cap(self) -> None:
+        genes = sorted(self.bundle.gene_go)[: pipeline.JACCARD_EXACT_MAX_GENES]
+        self.assertEqual(pipeline.select_genes_for_jaccard(genes), genes)
+
+    def test_large_gene_set_features_ignore_input_order(self) -> None:
+        record = next(
+            record
+            for record in self.context.train_positive_records
+            if sum(gene in self.bundle.gene_go for gene in record["genes"])
+            > pipeline.JACCARD_EXACT_MAX_GENES
+        )
+        forward = pipeline.build_feature_vector(
+            record["genes"], self.context.selected_go, self.bundle.gene_go
+        )
+        reverse = pipeline.build_feature_vector(
+            list(reversed(record["genes"])), self.context.selected_go, self.bundle.gene_go
+        )
+        self.assertTrue(np.array_equal(forward, reverse))
 
     def test_xgboost_fold_predictions_are_deterministic(self) -> None:
         fold = pipeline.build_cv_fold_datasets(
