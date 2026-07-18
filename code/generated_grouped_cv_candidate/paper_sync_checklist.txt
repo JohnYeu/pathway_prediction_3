@@ -1,0 +1,10 @@
+Paper items to synchronize only after candidate approval:
+- Dataset description: 538 source records and 512 unique gene-set modelling instances.
+- Outer train/test sample counts and class prevalence.
+- Exact-duplicate grouping rule and alias provenance.
+- Engineered feature names: annotated_gene_count and log_annotated_gene_count.
+- Main benchmark, confusion matrix, score-by-negative-type, and model-comparison metrics.
+- Ratio protocol: outer-training nested CV; outer test evaluated only for preselected 1:1.
+- Ratio table and figure, including normalized-AUPRC caveat.
+- Ablation, feature-importance, and LOFO results.
+- LOFO limitation for mixed-family groups represented by one compatibility family.

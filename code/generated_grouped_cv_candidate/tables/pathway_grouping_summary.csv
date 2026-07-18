@@ -1,0 +1,2 @@
+source_record_count,source_record_kegg,source_record_aracyc,modelling_group_count,modelling_group_kegg_stratum,modelling_group_aracyc_stratum,exact_duplicate_group_count,collapsed_extra_record_count,mixed_source_group_count,mixed_family_group_count,grouping_rule
+538,155,383,512,155,357,20,26,1,4,exact equality of sorted normalized gene membership

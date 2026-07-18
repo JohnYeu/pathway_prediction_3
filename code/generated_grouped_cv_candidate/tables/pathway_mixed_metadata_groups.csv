@@ -1,0 +1,5 @@
+gene_set_group_id,representative_pathway_id,mixed_source,mixed_family,source_pathway_ids,source_databases,source_families
+GSG_354a7c63fdf8239f,AC_PWY-5971,False,True,AC_PWY-5971;AC_PWY-5989,AraCyc;AraCyc,AraCyc_Lipid;AraCyc_Misc
+GSG_e0073353c3c5625e,AC_PWY-6014,False,True,AC_PWY-6014;AC_PWY-6710;AC_PWY-7634,AraCyc;AraCyc;AraCyc,AraCyc_Misc;AraCyc_Lipid;AraCyc_Misc
+GSG_b209ad6ed92a9151,AC_PWY-4562,False,True,AC_PWY-4562;AC_PWY-4765;AC_PWY-6554,AraCyc;AraCyc;AraCyc,AraCyc_Lipid;AraCyc_Lipid;AraCyc_Misc
+GSG_4c104acacacccd48,ath00543,True,True,AC_PWY-6936;ath00543,AraCyc;KEGG,AraCyc_AminoAcid;KEGG_Lipid

@@ -1,0 +1,5 @@
+negative_type,previous_count,candidate_count,previous_mean_raw_gene_count,candidate_mean_raw_gene_count,candidate_mean_annotated_gene_count,previous_mean_source_overlap_fraction,candidate_mean_source_overlap_fraction
+cross_pathway,134,127,26.470149253731343,32.661417322834644,32.13385826771653,1.0,1.0
+partial_50_80,134,128,26.097014925373134,25.15625,24.671875,1.0,1.0
+random_5_30,135,129,17.125925925925927,17.294573643410853,17.294573643410853,0.0,0.0
+shuffled,135,128,69.25925925925925,24.15625,24.15625,0.0034394929682856957,0.0010856427951536414
