@@ -113,6 +113,26 @@ class ReproduciblePipelineTests(unittest.TestCase):
             self.assertEqual(selected, fold.selected_go)
             self.assertEqual(pipeline.stable_json_sha256(selected), fold.selected_go_sha256)
 
+    def test_go_feature_count_candidates_share_one_fold_ranking(self) -> None:
+        self.assertEqual(pipeline.GO_FEATURE_COUNT_CANDIDATES, (20, 40, 60, 80, 100))
+        folds = pipeline.build_cv_fold_datasets(
+            self.bundle,
+            self.context,
+            ratio=1,
+            fast=True,
+            analysis_name="test_go_feature_count_cv",
+        )
+        ranked_go, stages = pipeline.ranked_go_terms_for_fold(
+            self.bundle,
+            folds[0],
+            max(pipeline.GO_FEATURE_COUNT_CANDIDATES),
+        )
+        self.assertEqual(len(ranked_go), 100)
+        self.assertEqual(ranked_go[: pipeline.N_GO_TERMS], folds[0].selected_go)
+        self.assertEqual(stages["mi_select"], 100)
+        for count in pipeline.GO_FEATURE_COUNT_CANDIDATES:
+            self.assertEqual(len(pipeline.feature_names_for(ranked_go[:count])), count + 9)
+
     def test_deterministic_seed_derivation(self) -> None:
         cases = {
             (42, 1, 42, 0, "train", "negative_generation"): 1973658644,

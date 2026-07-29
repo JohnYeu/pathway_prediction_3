@@ -131,6 +131,7 @@ SEED = 42
 DEFAULT_PRIMARY_RATIO = 1
 SUPPORTED_PRIMARY_RATIOS = (1, 2, 3, 4, 5)
 N_GO_TERMS = 60
+GO_FEATURE_COUNT_CANDIDATES = (20, 40, 60, 80, 100)
 MIN_PATHWAY_GENES = 5
 PRIMARY_TEST_SIZE = 0.20
 PRIMARY_TRAIN_NEGATIVE_SEED = SEED + 100
@@ -2531,6 +2532,255 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
     return summary_rows
 
 
+def ranked_go_terms_for_fold(
+    bundle: DatasetBundle,
+    fold: CVFoldData,
+    max_count: int,
+) -> Tuple[List[str], Dict[str, int]]:
+    """Return one fold-training MI ranking up to ``max_count`` terms.
+
+    Feature-count candidates are prefixes of the same fold-specific ranking.
+    This keeps the comparison paired: only the number of retained GO terms
+    changes, while samples, controls, seeds, and the ranking procedure do not.
+    """
+    ranked_go, stages, _ = select_go_terms_from_records(
+        fold.train_records,
+        bundle.gene_go,
+        bundle.go_genes,
+        seed=fold.feature_selection_seed,
+        k=max_count,
+    )
+    if len(ranked_go) != max_count:
+        raise AssertionError(f"Expected {max_count} ranked GO terms, got {len(ranked_go)}.")
+    if N_GO_TERMS <= max_count and ranked_go[:N_GO_TERMS] != fold.selected_go:
+        raise AssertionError("The top-60 prefix changed during feature-count comparison.")
+    return list(ranked_go), dict(stages)
+
+
+def evaluate_go_feature_count_folds(
+    bundle: DatasetBundle,
+    folds: Sequence[CVFoldData],
+    feature_counts: Sequence[int],
+    fast: bool,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Evaluate top-k GO representations on the same nested-CV folds."""
+    counts = tuple(sorted(set(int(value) for value in feature_counts)))
+    if not counts or counts[0] < 1:
+        raise ValueError("GO feature counts must contain positive integers.")
+    if N_GO_TERMS not in counts:
+        raise ValueError(f"The comparison must include the current {N_GO_TERMS}-term representation.")
+
+    per_fold_rows: List[Dict[str, Any]] = []
+    manifest_rows: List[Dict[str, Any]] = []
+    max_count = max(counts)
+    for fold in folds:
+        ranked_go, stages = ranked_go_terms_for_fold(bundle, fold, max_count)
+        train_records_sha256 = stable_json_sha256(
+            [(record["id"], record["genes"]) for record in fold.train_records]
+        )
+        validation_records_sha256 = stable_json_sha256(
+            [(record["id"], record["genes"]) for record in fold.validation_records]
+        )
+
+        # Rebuild each matrix from the same records and a prefix of the same GO
+        # ranking. The outer test set is never encoded or scored in this block.
+        for count in counts:
+            selected_go = ranked_go[:count]
+            X_train, y_train = records_to_matrix(fold.train_records, selected_go, bundle.gene_go)
+            X_validation, y_validation = records_to_matrix(
+                fold.validation_records,
+                selected_go,
+                bundle.gene_go,
+            )
+            model = xgb_model(
+                scale_pos_weight=fold.scale_pos_weight,
+                fast=fast,
+                random_state=fold.model_seed,
+            )
+            started = time.time()
+            model.fit(X_train, y_train)
+            scores = predict_scores(model, X_validation)
+            metrics = metrics_from_scores(y_validation, scores)
+            prevalence = float(np.mean(y_validation == 1))
+            selected_go_sha256 = stable_json_sha256(selected_go)
+            per_fold_rows.append(
+                {
+                    "n_go_terms": count,
+                    "n_total_features": count + 9,
+                    "repeat_index": fold.repeat_index,
+                    "repeat_seed": fold.repeat_seed,
+                    "fold_index": fold.fold_index,
+                    "ratio": f"1:{fold.ratio}",
+                    "n_train_positive": int((y_train == 1).sum()),
+                    "n_train_negative": int((y_train == 0).sum()),
+                    "n_validation_positive": int((y_validation == 1).sum()),
+                    "n_validation_negative": int((y_validation == 0).sum()),
+                    "positive_prevalence": prevalence,
+                    "auroc": metrics["test_auroc"],
+                    "auprc": metrics["test_auprc"],
+                    "normalized_auprc": normalized_auprc(metrics["test_auprc"], prevalence),
+                    "f1": metrics["f1"],
+                    "precision": metrics["precision"],
+                    "recall": metrics["recall"],
+                    "brier": metrics["brier"],
+                    "scale_pos_weight": fold.scale_pos_weight,
+                    "train_negative_seed": fold.train_negative_seed,
+                    "validation_negative_seed": fold.validation_negative_seed,
+                    "feature_selection_seed": fold.feature_selection_seed,
+                    "model_seed": fold.model_seed,
+                    "selected_go_sha256": selected_go_sha256,
+                    "train_records_sha256": train_records_sha256,
+                    "validation_records_sha256": validation_records_sha256,
+                    "elapsed_s": time.time() - started,
+                }
+            )
+            manifest_rows.append(
+                {
+                    "n_go_terms": count,
+                    "n_total_features": count + 9,
+                    "repeat_index": fold.repeat_index,
+                    "repeat_seed": fold.repeat_seed,
+                    "fold_index": fold.fold_index,
+                    "selected_go": selected_go,
+                    "selected_go_sha256": selected_go_sha256,
+                    "feature_selection_stages": {**stages, "mi_select": count},
+                    "train_records_sha256": train_records_sha256,
+                    "validation_records_sha256": validation_records_sha256,
+                    "train_negative_seed": fold.train_negative_seed,
+                    "validation_negative_seed": fold.validation_negative_seed,
+                    "feature_selection_seed": fold.feature_selection_seed,
+                    "model_seed": fold.model_seed,
+                }
+            )
+    return per_fold_rows, manifest_rows
+
+
+def run_go_feature_count_sensitivity(
+    bundle: DatasetBundle,
+    context: PrimaryContext,
+    fast: bool,
+) -> List[Dict[str, Any]]:
+    """Compare 20-100 selected GO terms using outer-training nested CV only."""
+    if context.ratio != DEFAULT_PRIMARY_RATIO:
+        raise ValueError("GO feature-count sensitivity is defined for the primary 1:1 ratio.")
+
+    folds = build_cv_fold_datasets(
+        bundle,
+        context,
+        ratio=DEFAULT_PRIMARY_RATIO,
+        fast=fast,
+        analysis_name="go_feature_count_cv",
+    )
+    outer_test_ids = {str(record["id"]) for record in context.test_positive_records}
+    for fold in folds:
+        if (set(fold.train_positive_ids) | set(fold.validation_positive_ids)) & outer_test_ids:
+            raise AssertionError("Outer-test pathways entered GO feature-count cross-validation.")
+
+    per_fold_rows, manifest_rows = evaluate_go_feature_count_folds(
+        bundle,
+        folds,
+        GO_FEATURE_COUNT_CANDIDATES,
+        fast=fast,
+    )
+    per_fold_df = pd.DataFrame(per_fold_rows)
+    metric_columns = ["auroc", "auprc", "normalized_auprc", "f1", "precision", "recall", "brier"]
+    summary_rows: List[Dict[str, Any]] = []
+    for count in GO_FEATURE_COUNT_CANDIDATES:
+        subset = per_fold_df[per_fold_df["n_go_terms"] == count]
+        row: Dict[str, Any] = {
+            "n_go_terms": count,
+            "n_total_features": count + 9,
+            "n_folds": len(subset),
+            "preselected_feature_count": count == N_GO_TERMS,
+            "feature_selection_protocol": "fold_training_variance_mi_top_k",
+            "outer_test_used": False,
+        }
+        for metric in metric_columns:
+            row[f"mean_{metric}"] = float(subset[metric].mean())
+            row[f"sd_{metric}"] = float(subset[metric].std(ddof=1)) if len(subset) > 1 else 0.0
+        summary_rows.append(row)
+
+    reference = next(row for row in summary_rows if row["n_go_terms"] == N_GO_TERMS)
+    for row in summary_rows:
+        for metric in ("auroc", "auprc", "f1"):
+            delta = row[f"mean_{metric}"] - reference[f"mean_{metric}"]
+            pooled_sd = math.sqrt(
+                (row[f"sd_{metric}"] ** 2 + reference[f"sd_{metric}"] ** 2) / 2.0
+            )
+            row[f"delta_{metric}_vs_60"] = delta
+            row[f"delta_{metric}_over_pooled_sd_vs_60"] = (
+                delta / pooled_sd if pooled_sd > 0 else float("nan")
+            )
+
+    best_auroc = max(summary_rows, key=lambda row: row["mean_auroc"])
+    best_auprc = max(summary_rows, key=lambda row: row["mean_auprc"])
+    best_f1 = max(summary_rows, key=lambda row: row["mean_f1"])
+    larger_rows = [row for row in summary_rows if row["n_go_terms"] > N_GO_TERMS]
+    larger_improvements_within_one_pooled_sd = all(
+        row["delta_auroc_over_pooled_sd_vs_60"] <= 1.0
+        and row["delta_auprc_over_pooled_sd_vs_60"] <= 1.0
+        for row in larger_rows
+    )
+
+    save_table(TABLE_DIR / "go_feature_count_cv_per_fold.csv", per_fold_rows)
+    save_table(TABLE_DIR / "go_feature_count_cv_summary.csv", summary_rows)
+    save_json(
+        DATA_DIR / "go_feature_count_cv_manifest.json",
+        {
+            "protocol": "outer-training-only repeated stratified nested cross-validation",
+            "primary_ratio": "1:1",
+            "candidate_go_counts": list(GO_FEATURE_COUNT_CANDIDATES),
+            "preselected_go_count": N_GO_TERMS,
+            "outer_test_used": False,
+            "frequency_filter_scope": "label-free full GO-annotated background",
+            "variance_mi_scope": "fold training only",
+            "automatic_selection_performed": False,
+            "best_mean_auroc_go_count": int(best_auroc["n_go_terms"]),
+            "best_mean_auprc_go_count": int(best_auprc["n_go_terms"]),
+            "best_mean_f1_go_count": int(best_f1["n_go_terms"]),
+            "larger_count_improvements_within_one_pooled_sd_of_60": (
+                larger_improvements_within_one_pooled_sd
+            ),
+            "interpretation_note": (
+                "This is a sensitivity analysis of the preselected 60-term representation. "
+                "It reports paired fold differences and does not use the outer test set or "
+                "automatically select a winner."
+            ),
+            "folds": manifest_rows,
+        },
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    x = np.asarray([row["n_go_terms"] for row in summary_rows], dtype=int)
+    ax.errorbar(
+        x,
+        [row["mean_auroc"] for row in summary_rows],
+        yerr=[row["sd_auroc"] for row in summary_rows],
+        marker="o",
+        capsize=4,
+        label="AUROC",
+    )
+    ax.errorbar(
+        x,
+        [row["mean_auprc"] for row in summary_rows],
+        yerr=[row["sd_auprc"] for row in summary_rows],
+        marker="o",
+        capsize=4,
+        color="#d62728",
+        label="AUPRC",
+    )
+    ax.axvline(N_GO_TERMS, color="#666666", linestyle="--", linewidth=1.2, label="Current setting (60)")
+    ax.set_xticks(x)
+    ax.set_xlabel("Number of selected GO terms")
+    ax.set_ylabel("Cross-validated metric (mean +/- SD)")
+    ax.set_title("Cross-validated performance across GO feature counts")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "go_feature_count_cv_performance.png", dpi=220)
+    plt.close(fig)
+    return summary_rows
+
+
 def model_catalog(fast: bool, scale_pos_weight: float) -> Dict[str, Any]:
     """Return the 13-method model catalogue for the systematic comparison.
 
@@ -3298,6 +3548,21 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
                 "output_table": "tables/ratio_sensitivity.csv",
             }
         )
+    if "go-count" in section_set:
+        rows.append(
+            {
+                "analysis_name": "go_feature_count_sensitivity",
+                "run_mode": run_mode_from_args(args),
+                "model_comparison_protocol": "",
+                "n_splits": cv_splits,
+                "n_repeats": cv_repeats,
+                "total_folds": cv_splits * cv_repeats,
+                "random_state": "42" if args.quick else "42;7;13",
+                "metric_reported": "outer-training-only CV AUROC/AUPRC/F1/precision/recall/Brier",
+                "error_term_type": "SD",
+                "output_table": "tables/go_feature_count_cv_summary.csv",
+            }
+        )
     if "models" in section_set:
         rows.append(
             {
@@ -3345,7 +3610,11 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         )
     for row in rows:
         row["primary_ratio"] = f"1:{args.primary_ratio}"
-        if row["analysis_name"] in {"seed42_reference_run", "negative_ratio_sensitivity"}:
+        if row["analysis_name"] in {
+            "seed42_reference_run",
+            "negative_ratio_sensitivity",
+            "go_feature_count_sensitivity",
+        }:
             row["feature_selection_protocol"] = "nested_fold_training_selected60_for_cv"
             row["nested_feature_selection"] = True
         else:
@@ -3371,6 +3640,8 @@ def save_result_summary(
         "heldout_negative_type_performance.csv",
         "model_comparison.csv",
         "ratio_sensitivity.csv",
+        "go_feature_count_cv_per_fold.csv",
+        "go_feature_count_cv_summary.csv",
         "ablation.csv",
         "feature_importance.csv",
     ]:
@@ -3490,6 +3761,7 @@ def save_manifest(
         "feature_selection_scope": {
             "heldout_models": "outer_train_only",
             "ratio_cv": "fold_train_only_for_variance_and_mutual_information",
+            "go_feature_count_cv": "fold_train_only_for_variance_and_mutual_information",
             "frequency_prefilter": "label_free_full_go_background",
         },
         "jaccard_feature_protocol": jaccard_feature_protocol(),
@@ -3559,6 +3831,12 @@ def save_manifest(
             "training_only_ratio_cv": (
                 "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, "
                 "data/ratio_cv_manifest.json, and figures/Fig7_robustness.png"
+            ),
+            "go_feature_count_sensitivity": (
+                "tables/go_feature_count_cv_per_fold.csv, "
+                "tables/go_feature_count_cv_summary.csv, "
+                "data/go_feature_count_cv_manifest.json, and "
+                "figures/go_feature_count_cv_performance.png"
             ),
             "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
             "feature_importance": "tables/table_top_features.csv and figures/Fig3_shap.png",
@@ -3766,6 +4044,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
         print("Running negative-ratio sensitivity ...", flush=True)
         run_ratio_sensitivity(bundle, context, fast=args.quick)
         gc.collect()
+    if "go-count" in sections:
+        print("Running GO feature-count sensitivity ...", flush=True)
+        run_go_feature_count_sensitivity(bundle, context, fast=args.quick)
+        gc.collect()
     if "models" in sections:
         print("Running model comparison ...", flush=True)
         run_model_comparison(bundle, context, fast=args.quick)
@@ -3924,7 +4206,7 @@ def parse_args() -> argparse.Namespace:
         "--sections",
         nargs="+",
         default=["all"],
-        choices=["all", "main", "ratio", "models", "ablation", "importance"],
+        choices=["all", "main", "ratio", "go-count", "models", "ablation", "importance"],
         help="Analyses to run.",
     )
     parser.add_argument("--quick", action="store_true", help="Use faster models/CV for fast validation runs.")
@@ -3932,7 +4214,12 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.full:
         args.quick = False
-    if args.primary_ratio == DEFAULT_PRIMARY_RATIO:
+    if "go-count" in args.sections and ("all" in args.sections or len(args.sections) != 1):
+        parser.error("Run --sections go-count separately so its outputs remain supplementary.")
+    if "go-count" in args.sections:
+        suffix = "_quick" if args.quick else ""
+        default_out = ROOT / f"generated_go_feature_count_sensitivity{suffix}"
+    elif args.primary_ratio == DEFAULT_PRIMARY_RATIO:
         default_out = Path("/tmp/pathwayml_grouped_cv_quick") if args.quick else ROOT / "generated"
     else:
         name = f"generated_grouped_cv_ratio_1_{args.primary_ratio}" + ("_quick" if args.quick else "")
@@ -3944,11 +4231,13 @@ def parse_args() -> argparse.Namespace:
         if not out_dir.is_absolute():
             out_dir = ROOT / out_dir
         if out_dir.resolve() == (ROOT / "generated").resolve() and (
-            args.quick or args.primary_ratio != DEFAULT_PRIMARY_RATIO
+            args.quick
+            or args.primary_ratio != DEFAULT_PRIMARY_RATIO
+            or "go-count" in args.sections
         ):
             parser.error(
-                "Only a full 1:1 run may write to generated/. Omit --out-dir "
-                "to use the isolated quick or ratio-specific directory."
+                "Only a full 1:1 paper run may write to generated/. Omit --out-dir "
+                "to use the isolated quick, ratio, or supplementary directory."
             )
         args.out_dir = str(out_dir)
     return args
