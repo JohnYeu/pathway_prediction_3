@@ -1,0 +1,40 @@
+{
+  "feature_selection_protocol": "nested_fold_training_selected80",
+  "fold_selected_go_sha256": [
+    "5278fff3821350ea3dc0c70b80e6e99f83336c8ad2b59b7373f297543e130dfd",
+    "3398140c2e00dc38b670c41174640c34bdda9f6cd1367fd0977367652cc22e38",
+    "925090bcb392d41f06c980858132ef87f005a390fd68d1b0c688053eb6d7ba04",
+    "4d111ad9204fba96f909bb2562700bad74ca678c6f83c13fd7ea8c69b16dd807",
+    "cd9e7bcf1f2a4a6d25455689bc11c8ee7bec0452c5c1c2aca61597c0d45759bb",
+    "2e6ca5303b34a4fe854d80284e572f74a5d6f5f2a5796bc30f898b7b639b075e",
+    "f68df1df1b2c5cbd6db7041da2263a333c7c7b441ee9ca0dcccf733fd89454a2",
+    "bc7931d975347cf6576f7f626831ec012ccf984a95e6fd0587ef6df70e8d3068",
+    "a1818ebf18f9e8e948971a8bdad5f89505e8c82be5c4dcc926f14605bda9aec9",
+    "93937c4f98d6d775557fb35b1a1de47f4466aa14a18df0b9fb68833c2587fb88",
+    "9b73517e58eb8ba0bc638627177cb05554c3e37ec35c51dddb15f6948ee26efd",
+    "b684ea62f4f42114312136c66e5fc274b7cdacfddc1241c2ce12e887dcacf769",
+    "ac8146237297375e1e17df069ef0bc4d10251551f48a864f205aa481cb0be3ef",
+    "2e9654b3bae28b7f5cdb28ee62939918e683645949003400c88cb9e84776ca80",
+    "62120243085934ba40e34cb6a3184f737b6f28629b754affa403879b5678f746"
+  ],
+  "model_names": [
+    "Logistic Regression",
+    "Linear SVM",
+    "RBF SVM",
+    "k-NN (k=7)",
+    "Gaussian Naive Bayes",
+    "Random Forest",
+    "Extra Trees",
+    "Gradient Boosting",
+    "XGBoost",
+    "MLP",
+    "AdaBoost",
+    "LightGBM",
+    "CatBoost"
+  ],
+  "n_folds": 15,
+  "observed_top_mean_auroc_model": "Random Forest",
+  "outer_test_used": false,
+  "primary_model": "Random Forest",
+  "protocol": "outer_training_repeated_stratified_cv"
+}

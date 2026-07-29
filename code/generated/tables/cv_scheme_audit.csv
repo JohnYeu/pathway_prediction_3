@@ -1,6 +1,7 @@
-analysis_name,run_mode,model_comparison_protocol,n_splits,n_repeats,total_folds,random_state,metric_reported,error_term_type,output_table,primary_ratio,feature_selection_protocol,nested_feature_selection,negative_source_isolation
-seed42_reference_run,full,,5,3,15,42;7;13,CV AUROC plus held-out AUROC/AUPRC/F1/precision/recall,SD,tables/main_benchmark.csv,1:1,nested_fold_training_selected60_for_cv,True,True
-negative_ratio_sensitivity,full,,5,3,15,42;7;13,"outer-training-only CV AUROC, normalized AUPRC, F1, precision, recall, and Brier",SD,tables/ratio_sensitivity.csv,1:1,nested_fold_training_selected60_for_cv,True,True
-supplementary_model_comparison,full,heldout_only,,,,42,held-out AUROC/AUPRC/F1/precision/recall only,NA,tables/model_comparison.csv,1:1,fixed_outer_training_selected60,False,True
-feature_ablation,full,,,,,42,held-out AUROC/AUPRC/F1/precision/recall,NA,tables/ablation.csv,1:1,fixed_outer_training_selected60,False,True
-feature_importance,full,,,,,42,SHAP/model feature attribution on held-out split,NA,tables/feature_importance.csv,1:1,fixed_outer_training_selected60,False,True
+analysis_name,model,run_mode,model_comparison_protocol,n_splits,n_repeats,total_folds,random_state,metric_reported,error_term_type,output_table,primary_ratio,feature_selection_protocol,nested_feature_selection,negative_source_isolation
+seed42_reference_run,Random Forest,full,,5,3,15,42;7;13,CV AUROC plus held-out AUROC/AUPRC/F1/precision/recall,SD,tables/main_benchmark.csv,1:1,nested_fold_training_selected80_for_cv,True,True
+negative_ratio_sensitivity,Random Forest,full,,5,3,15,42;7;13,"outer-training-only CV AUROC, normalized AUPRC, F1, precision, recall, and Brier",SD,tables/ratio_sensitivity.csv,1:1,nested_fold_training_selected80_for_cv,True,True
+go_feature_count_sensitivity,Random Forest,full,,5,3,15,42;7;13,outer-training-only CV AUROC/AUPRC/F1/precision/recall/Brier,SD,tables/go_feature_count_cv_summary.csv,1:1,nested_fold_training_selected80_for_cv,True,True
+supplementary_model_comparison,13-model catalogue,full,outer_training_repeated_stratified_cv,5,3,15,42;7;13,outer-training-only CV AUROC/AUPRC/F1/precision/recall/Brier,SD,tables/model_comparison.csv,1:1,nested_fold_training_selected80_for_cv,True,True
+feature_ablation,Random Forest,full,,,,,42,held-out AUROC/AUPRC/F1/precision/recall,NA,tables/ablation.csv,1:1,fixed_outer_training_selected80,False,True
+feature_importance,Random Forest,full,,,,,42,SHAP/model feature attribution on held-out split,NA,tables/feature_importance.csv,1:1,fixed_outer_training_selected80,False,True

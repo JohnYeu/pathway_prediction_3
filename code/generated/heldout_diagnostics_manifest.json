@@ -1,31 +1,32 @@
 {
   "confusion_at_threshold": {
-    "f1": 0.7837837837837838,
-    "false_negative": 16,
-    "false_positive": 32,
+    "f1": 0.8035714285714286,
+    "false_negative": 13,
+    "false_positive": 31,
     "n_test": 206,
-    "precision": 0.7310924369747899,
-    "recall": 0.8446601941747572,
+    "precision": 0.743801652892562,
+    "recall": 0.8737864077669902,
     "threshold": 0.5,
-    "true_negative": 71,
-    "true_positive": 87
+    "true_negative": 72,
+    "true_positive": 90
   },
   "figures": [
     "FigC_roc_pr.png",
     "FigF_confusion.png",
     "FigG_score_by_type.png"
   ],
+  "model": "Random Forest",
   "n_test": 206,
   "primary_ratio": "1:1",
-  "selected_go_sha256": "d832338fd932d1c78547f031acb30cc4ab7ff678230ccb5e3420815818fc2437",
-  "source": "reference XGBoost scores from run_main_benchmark",
+  "selected_go_sha256": "3a1d385c45db7e6828608173de2c05fa72184735f0c71d1c44791b62421d2d6e",
+  "source": "Random Forest scores from run_main_benchmark",
   "tables": [
     "heldout_predictions.csv",
     "heldout_confusion_matrix.csv",
     "heldout_score_by_type.csv",
     "heldout_negative_type_performance.csv"
   ],
-  "test_auprc": 0.8423487652345576,
-  "test_auroc": 0.864926006221133,
+  "test_auprc": 0.8381942173952752,
+  "test_auroc": 0.8645489678574795,
   "threshold": 0.5
 }

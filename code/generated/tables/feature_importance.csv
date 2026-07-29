@@ -1,31 +1,31 @@
-rank,feature,importance,method,primary_ratio
-1,jaccard_mean,0.7604022026062012,shap_mean_abs,1:1
-2,go_entropy,0.5318970680236816,shap_mean_abs,1:1
-3,annotated_gene_count,0.5231248140335083,shap_mean_abs,1:1
-4,GO:0008150,0.38050949573516846,shap_mean_abs,1:1
-5,mean_go_per_gene,0.3372002840042114,shap_mean_abs,1:1
-6,jaccard_std,0.3147113025188446,shap_mean_abs,1:1
-7,GO:0005737,0.2866446077823639,shap_mean_abs,1:1
-8,GO:0009507,0.216023251414299,shap_mean_abs,1:1
-9,GO:0005829,0.20468877255916595,shap_mean_abs,1:1
-10,GO:0005739,0.19289076328277588,shap_mean_abs,1:1
-11,GO:0006412,0.14053651690483093,shap_mean_abs,1:1
-12,GO:0005575,0.1287476122379303,shap_mean_abs,1:1
-13,go_size_std,0.12261366844177246,shap_mean_abs,1:1
-14,jaccard_max,0.11956357210874557,shap_mean_abs,1:1
-15,GO:0009579,0.11725814640522003,shap_mean_abs,1:1
-16,log_annotated_gene_count,0.1027878150343895,shap_mean_abs,1:1
-17,GO:0005886,0.09361166507005692,shap_mean_abs,1:1
-18,GO:0005783,0.08477803319692612,shap_mean_abs,1:1
-19,GO:0007165,0.07874874770641327,shap_mean_abs,1:1
-20,GO:0016020,0.05136013776063919,shap_mean_abs,1:1
-21,GO:0003700,0.05005520582199097,shap_mean_abs,1:1
-22,GO:0006355,0.046329379081726074,shap_mean_abs,1:1
-23,GO:0009860,0.04605725780129433,shap_mean_abs,1:1
-24,GO:0003723,0.03362910822033882,shap_mean_abs,1:1
-25,GO:0008483,0.03348873183131218,shap_mean_abs,1:1
-26,GO:0005759,0.032559584826231,shap_mean_abs,1:1
-27,GO:0000287,0.031964823603630066,shap_mean_abs,1:1
-28,GO:0006631,0.021799782291054726,shap_mean_abs,1:1
-29,GO:0010224,0.02143644168972969,shap_mean_abs,1:1
-30,jaccard_min,0.020468708127737045,shap_mean_abs,1:1
+rank,feature,importance,method,model,primary_ratio
+1,jaccard_mean,0.06448270281213998,shap_mean_abs_positive_class,Random Forest,1:1
+2,go_entropy,0.04088832686382092,shap_mean_abs_positive_class,Random Forest,1:1
+3,GO:0008150,0.04083372132013569,shap_mean_abs_positive_class,Random Forest,1:1
+4,mean_go_per_gene,0.02412428926113039,shap_mean_abs_positive_class,Random Forest,1:1
+5,jaccard_std,0.018992331615739048,shap_mean_abs_positive_class,Random Forest,1:1
+6,GO:0003700,0.018990348174597372,shap_mean_abs_positive_class,Random Forest,1:1
+7,GO:0009507,0.01698099191881922,shap_mean_abs_positive_class,Random Forest,1:1
+8,GO:0005737,0.016695457162276196,shap_mean_abs_positive_class,Random Forest,1:1
+9,annotated_gene_count,0.014684941352816267,shap_mean_abs_positive_class,Random Forest,1:1
+10,GO:0006355,0.014519055565410407,shap_mean_abs_positive_class,Random Forest,1:1
+11,GO:0006412,0.014214563137533774,shap_mean_abs_positive_class,Random Forest,1:1
+12,log_annotated_gene_count,0.013605395875646263,shap_mean_abs_positive_class,Random Forest,1:1
+13,GO:0005829,0.012765251471383772,shap_mean_abs_positive_class,Random Forest,1:1
+14,GO:0005575,0.011767675571488213,shap_mean_abs_positive_class,Random Forest,1:1
+15,GO:0030533,0.009866086080478587,shap_mean_abs_positive_class,Random Forest,1:1
+16,GO:0006414,0.008206152648761974,shap_mean_abs_positive_class,Random Forest,1:1
+17,GO:0007165,0.00659896744937703,shap_mean_abs_positive_class,Random Forest,1:1
+18,jaccard_max,0.006413535349015781,shap_mean_abs_positive_class,Random Forest,1:1
+19,jaccard_min,0.005397625588014807,shap_mean_abs_positive_class,Random Forest,1:1
+20,GO:0009579,0.00493463174754706,shap_mean_abs_positive_class,Random Forest,1:1
+21,GO:0005739,0.004126624533307951,shap_mean_abs_positive_class,Random Forest,1:1
+22,GO:0005886,0.00408863324625033,shap_mean_abs_positive_class,Random Forest,1:1
+23,GO:0016020,0.0038231333766935408,shap_mean_abs_positive_class,Random Forest,1:1
+24,GO:0004672,0.003487022110026869,shap_mean_abs_positive_class,Random Forest,1:1
+25,go_size_std,0.0033023019056151845,shap_mean_abs_positive_class,Random Forest,1:1
+26,GO:0003729,0.0030318228265109478,shap_mean_abs_positive_class,Random Forest,1:1
+27,GO:0006099,0.0028351379404182113,shap_mean_abs_positive_class,Random Forest,1:1
+28,GO:0020037,0.002599135132691997,shap_mean_abs_positive_class,Random Forest,1:1
+29,GO:0005783,0.002408754668605559,shap_mean_abs_positive_class,Random Forest,1:1
+30,GO:0003723,0.0022843311103398893,shap_mean_abs_positive_class,Random Forest,1:1
