@@ -4607,13 +4607,20 @@ def parse_args() -> argparse.Namespace:
         out_dir = Path(args.out_dir).expanduser()
         if not out_dir.is_absolute():
             out_dir = ROOT / out_dir
-        if out_dir.resolve() == (ROOT / "generated").resolve() and (
-            args.quick
-            or args.primary_ratio != DEFAULT_PRIMARY_RATIO
-            or "go-count" in args.sections
+        # A top-level ``--sections all`` run delegates work to internal child
+        # processes that share the formal output directory. External partial,
+        # quick, and non-primary-ratio commands remain blocked from that path.
+        if (
+            out_dir.resolve() == (ROOT / "generated").resolve()
+            and os.environ.get("PATHWAYML_CHILD") != "1"
+            and (
+                args.quick
+                or args.primary_ratio != DEFAULT_PRIMARY_RATIO
+                or "go-count" in args.sections
+            )
         ):
             parser.error(
-                "Only a full 1:1 paper run may write to generated/. Omit --out-dir "
+                "Only a full 1:1 formal run may write to generated/. Omit --out-dir "
                 "to use the isolated quick, ratio, or supplementary directory."
             )
         args.out_dir = str(out_dir)

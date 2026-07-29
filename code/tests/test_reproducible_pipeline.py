@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 import sys
 import unittest
@@ -262,6 +263,27 @@ class ReproduciblePipelineTests(unittest.TestCase):
         self.assertEqual(model.n_estimators, 120)
         self.assertEqual(model.max_depth, 10)
         self.assertEqual(model.class_weight, "balanced")
+
+    def test_internal_child_accepts_formal_output_directory(self) -> None:
+        original_argv = sys.argv
+        original_child = os.environ.get("PATHWAYML_CHILD")
+        try:
+            os.environ["PATHWAYML_CHILD"] = "1"
+            sys.argv = [
+                "reproducible_pipeline.py",
+                "--out-dir",
+                str(pipeline.ROOT / "generated"),
+                "--sections",
+                "go-count",
+            ]
+            args = pipeline.parse_args()
+            self.assertEqual(Path(args.out_dir).resolve(), (pipeline.ROOT / "generated").resolve())
+        finally:
+            sys.argv = original_argv
+            if original_child is None:
+                os.environ.pop("PATHWAYML_CHILD", None)
+            else:
+                os.environ["PATHWAYML_CHILD"] = original_child
 
     def test_positive_class_shap_shape_normalization(self) -> None:
         class_zero = np.zeros((4, 3), dtype=float)
