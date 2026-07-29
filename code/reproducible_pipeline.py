@@ -2683,7 +2683,16 @@ def run_go_feature_count_sensitivity(
         fast=fast,
     )
     per_fold_df = pd.DataFrame(per_fold_rows)
-    metric_columns = ["auroc", "auprc", "normalized_auprc", "f1", "precision", "recall", "brier"]
+    metric_columns = [
+        "auroc",
+        "auprc",
+        "normalized_auprc",
+        "f1",
+        "precision",
+        "recall",
+        "brier",
+        "elapsed_s",
+    ]
     summary_rows: List[Dict[str, Any]] = []
     for count in GO_FEATURE_COUNT_CANDIDATES:
         subset = per_fold_df[per_fold_df["n_go_terms"] == count]
@@ -2777,6 +2786,52 @@ def run_go_feature_count_sensitivity(
     ax.legend()
     fig.tight_layout()
     fig.savefig(FIG_DIR / "go_feature_count_cv_performance.png", dpi=220)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    mean_runtime = np.asarray(
+        [row["mean_elapsed_s"] for row in summary_rows],
+        dtype=float,
+    )
+    runtime_sd = np.asarray(
+        [row["sd_elapsed_s"] for row in summary_rows],
+        dtype=float,
+    )
+    ax.errorbar(
+        x,
+        mean_runtime,
+        yerr=runtime_sd,
+        marker="o",
+        capsize=4,
+        color="#2a9d8f",
+        linewidth=1.8,
+        label="Fit and evaluation time",
+    )
+    ax.axvline(
+        N_GO_TERMS,
+        color="#666666",
+        linestyle="--",
+        linewidth=1.2,
+        label="Current setting (60)",
+    )
+    for count, runtime in zip(x, mean_runtime):
+        ax.annotate(
+            f"{runtime:.3f} s",
+            (count, runtime),
+            xytext=(0, 9),
+            textcoords="offset points",
+            ha="center",
+            fontsize=9,
+        )
+    ax.set_xticks(x)
+    runtime_upper = float(np.max(mean_runtime + runtime_sd)) * 1.12
+    ax.set_ylim(0.0, runtime_upper)
+    ax.set_xlabel("Number of selected GO terms")
+    ax.set_ylabel("Time per fold (seconds; mean +/- SD)")
+    ax.set_title("Model runtime across GO feature counts")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "go_feature_count_cv_runtime.png", dpi=220)
     plt.close(fig)
     return summary_rows
 
@@ -3836,7 +3891,8 @@ def save_manifest(
                 "tables/go_feature_count_cv_per_fold.csv, "
                 "tables/go_feature_count_cv_summary.csv, "
                 "data/go_feature_count_cv_manifest.json, and "
-                "figures/go_feature_count_cv_performance.png"
+                "figures/go_feature_count_cv_performance.png and "
+                "figures/go_feature_count_cv_runtime.png"
             ),
             "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
             "feature_importance": "tables/table_top_features.csv and figures/Fig3_shap.png",
