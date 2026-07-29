@@ -3978,10 +3978,28 @@ def save_manifest(
 
 
 def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryContext) -> None:
-    """Compare the candidate run with the preserved pre-grouping result set."""
+    """Compare a candidate run with the preserved primary result directory.
+
+    The primary directory can represent any earlier configuration.  Counts and
+    protocol labels therefore come from its saved summary and manifest rather
+    than from migration-era constants.
+    """
     old_dir = ROOT / "generated"
     if OUT_DIR.resolve() == old_dir.resolve() or not (old_dir / "tables" / "main_benchmark.csv").exists():
         return
+
+    old_summary_path = old_dir / "result_summary.json"
+    old_manifest_path = old_dir / "manifest.json"
+    old_summary = (
+        json.loads(old_summary_path.read_text(encoding="utf-8"))
+        if old_summary_path.exists()
+        else {}
+    )
+    old_manifest = (
+        json.loads(old_manifest_path.read_text(encoding="utf-8"))
+        if old_manifest_path.exists()
+        else {}
+    )
 
     rows: List[Dict[str, Any]] = []
 
@@ -3999,19 +4017,66 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
             }
         )
 
-    add("dataset", "source database records", 538, len(bundle.source_pathways))
-    add("dataset", "positive modelling instances", 538, len(bundle.pathways))
-    add("dataset", "KEGG source records", 155, bundle.grouping_summary.get("source_record_kegg"))
-    add("dataset", "AraCyc source records", 383, bundle.grouping_summary.get("source_record_aracyc"))
-    add("dataset", "exact duplicate groups", 0, bundle.grouping_summary.get("exact_duplicate_group_count"))
-    add("dataset", "collapsed extra records", 0, bundle.grouping_summary.get("collapsed_extra_record_count"))
-    add("split", "outer training positives", 430, len(context.train_positive_records))
-    add("split", "outer test positives", 108, len(context.test_positive_records))
+    add(
+        "dataset",
+        "source database records",
+        old_summary.get("n_pathway_source_records", ""),
+        len(bundle.source_pathways),
+    )
+    add(
+        "dataset",
+        "positive modelling instances",
+        old_summary.get("n_modelling_groups", old_summary.get("n_pathways", "")),
+        len(bundle.pathways),
+    )
+    add(
+        "dataset",
+        "KEGG source records",
+        old_summary.get("n_source_kegg", ""),
+        bundle.grouping_summary.get("source_record_kegg"),
+    )
+    add(
+        "dataset",
+        "AraCyc source records",
+        old_summary.get("n_source_aracyc", ""),
+        bundle.grouping_summary.get("source_record_aracyc"),
+    )
+    add(
+        "dataset",
+        "exact duplicate groups",
+        old_summary.get("pathway_grouping_summary", {}).get(
+            "exact_duplicate_group_count",
+            old_summary.get("n_exact_duplicate_groups", ""),
+        ),
+        bundle.grouping_summary.get("exact_duplicate_group_count"),
+    )
+    add(
+        "dataset",
+        "collapsed extra records",
+        old_summary.get("pathway_grouping_summary", {}).get(
+            "collapsed_extra_record_count",
+            old_summary.get("n_collapsed_extra_records", ""),
+        ),
+        bundle.grouping_summary.get("collapsed_extra_record_count"),
+    )
+    add(
+        "split",
+        "outer training positives",
+        old_summary.get("n_train_positive", ""),
+        len(context.train_positive_records),
+    )
+    add(
+        "split",
+        "outer test positives",
+        old_summary.get("n_test_positive", ""),
+        len(context.test_positive_records),
+    )
 
     old_go_path = old_dir / "data" / "selected_go_terms.json"
     if old_go_path.exists():
         old_go = set(json.loads(old_go_path.read_text(encoding="utf-8")))
         candidate_go = set(context.selected_go)
+        add("features", "selected GO term count", len(old_go), len(candidate_go))
         add("features", "selected GO overlap count", len(old_go), len(old_go & candidate_go))
         add(
             "features",
@@ -4072,18 +4137,35 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
     if negative_comparison_rows:
         save_table(TABLE_DIR / "negative_distribution_comparison.csv", negative_comparison_rows)
 
-    add("protocol", "ratio comparison data", "outer held-out test", "outer-training nested CV")
-    add("protocol", "ratio feature selection", "fixed primary feature set", "fold-training selection")
-    add("protocol", "outer test ratios evaluated", "1:1 through 1:5", "preselected 1:1 only")
+    add(
+        "protocol",
+        "GO selection mode",
+        old_manifest.get("go_selection_mode", ""),
+        GO_SELECTION_MODE,
+    )
+    add(
+        "protocol",
+        "primary split hash",
+        old_manifest.get("primary_split_sha256", ""),
+        primary_split_sha256(context),
+    )
+    add(
+        "protocol",
+        "primary class ratio",
+        old_manifest.get("primary_ratio", old_summary.get("primary_ratio", "")),
+        f"1:{context.ratio}",
+    )
     save_table(TABLE_DIR / "old_vs_candidate_comparison.csv", rows)
 
     lines = [
-        "# Previous and candidate analysis comparison",
+        "# Primary and candidate analysis comparison",
         "",
-        "The previous result directory remains unchanged. The candidate uses exact gene-set groups and training-only nested ratio cross-validation.",
+        "The primary result directory remains unchanged. Values below are read from its saved outputs and compared with this candidate run.",
         "",
         f"- Source records retained: {len(bundle.source_pathways)}",
         f"- Unique gene-set modelling instances: {len(bundle.pathways)}",
+        f"- Selected GO terms: {len(context.selected_go)}",
+        f"- Total model features: {len(context.feature_names)}",
         f"- Exact duplicate groups: {bundle.grouping_summary.get('exact_duplicate_group_count', 0)}",
         f"- Collapsed extra records: {bundle.grouping_summary.get('collapsed_extra_record_count', 0)}",
         f"- Mixed-source groups: {bundle.grouping_summary.get('mixed_source_group_count', 0)}",
@@ -4096,15 +4178,11 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
 
     checklist = [
         "Paper items to synchronize only after candidate approval:",
-        "- Dataset description: 538 source records and 512 unique gene-set modelling instances.",
+        "- Selected GO count, total feature dimension, and feature-selection wording.",
         "- Outer train/test sample counts and class prevalence.",
-        "- Exact-duplicate grouping rule and alias provenance.",
-        "- Engineered feature names: annotated_gene_count and log_annotated_gene_count.",
         "- Main benchmark, confusion matrix, score-by-negative-type, and model-comparison metrics.",
-        "- Ratio protocol: outer-training nested CV; outer test evaluated only for preselected 1:1.",
         "- Ratio table and figure, including normalized-AUPRC caveat.",
         "- Ablation and feature-importance results.",
-        "- Remove heuristic pathway-category labels and their held-out analysis from the manuscript.",
     ]
     (OUT_DIR / "paper_sync_checklist.txt").write_text("\n".join(checklist) + "\n", encoding="utf-8")
 
