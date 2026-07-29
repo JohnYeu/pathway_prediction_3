@@ -2833,6 +2833,55 @@ def run_go_feature_count_sensitivity(
     fig.tight_layout()
     fig.savefig(FIG_DIR / "go_feature_count_cv_runtime.png", dpi=220)
     plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    ax.errorbar(
+        x,
+        mean_runtime,
+        yerr=runtime_sd,
+        marker="o",
+        capsize=4,
+        color="#2a9d8f",
+        linewidth=1.8,
+        label="Fit and evaluation time",
+    )
+    ax.axvline(
+        N_GO_TERMS,
+        color="#666666",
+        linestyle="--",
+        linewidth=1.2,
+        label="Current setting (60)",
+    )
+    for count, runtime in zip(x, mean_runtime):
+        ax.annotate(
+            f"{runtime:.3f} s",
+            (count, runtime),
+            xytext=(0, 9),
+            textcoords="offset points",
+            ha="center",
+            fontsize=9,
+        )
+    zoom_min = float(np.min(mean_runtime - runtime_sd))
+    zoom_max = float(np.max(mean_runtime + runtime_sd))
+    zoom_margin = max((zoom_max - zoom_min) * 0.18, 0.002)
+    runtime_range_ms = (float(np.max(mean_runtime)) - float(np.min(mean_runtime))) * 1000.0
+    ax.set_xticks(x)
+    ax.set_ylim(zoom_min - zoom_margin, zoom_max + zoom_margin)
+    ax.set_xlabel("Number of selected GO terms")
+    ax.set_ylabel("Time per fold (seconds; mean +/- SD)")
+    ax.set_title("Model runtime across GO feature counts (zoomed y-axis)")
+    ax.text(
+        0.02,
+        0.04,
+        f"Truncated y-axis; mean runtime range = {runtime_range_ms:.1f} ms per fold",
+        transform=ax.transAxes,
+        fontsize=9,
+        color="#444444",
+    )
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "go_feature_count_cv_runtime_zoomed.png", dpi=220)
+    plt.close(fig)
     return summary_rows
 
 
@@ -3892,7 +3941,8 @@ def save_manifest(
                 "tables/go_feature_count_cv_summary.csv, "
                 "data/go_feature_count_cv_manifest.json, and "
                 "figures/go_feature_count_cv_performance.png and "
-                "figures/go_feature_count_cv_runtime.png"
+                "figures/go_feature_count_cv_runtime.png and "
+                "figures/go_feature_count_cv_runtime_zoomed.png"
             ),
             "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
             "feature_importance": "tables/table_top_features.csv and figures/Fig3_shap.png",
