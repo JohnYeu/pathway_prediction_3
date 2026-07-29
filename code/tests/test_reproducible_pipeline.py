@@ -72,7 +72,7 @@ class ReproduciblePipelineTests(unittest.TestCase):
 
     def test_training_selection_has_fixed_dimension(self) -> None:
         self.assertEqual(len(self.context.selected_go), pipeline.N_GO_TERMS)
-        self.assertEqual(len(self.context.feature_names), pipeline.N_GO_TERMS + 9)
+        self.assertEqual(len(self.context.feature_names), pipeline.N_TOTAL_FEATURES)
         self.assertEqual(self.context.feature_selection_stages["mi_select"], pipeline.N_GO_TERMS)
 
     def test_negative_generator_boundaries(self) -> None:
@@ -115,6 +115,8 @@ class ReproduciblePipelineTests(unittest.TestCase):
 
     def test_go_feature_count_candidates_share_one_fold_ranking(self) -> None:
         self.assertEqual(pipeline.GO_FEATURE_COUNT_CANDIDATES, (20, 40, 60, 80, 100))
+        self.assertEqual(pipeline.N_GO_TERMS, 80)
+        self.assertEqual(pipeline.N_TOTAL_FEATURES, 89)
         folds = pipeline.build_cv_fold_datasets(
             self.bundle,
             self.context,
@@ -131,7 +133,10 @@ class ReproduciblePipelineTests(unittest.TestCase):
         self.assertEqual(ranked_go[: pipeline.N_GO_TERMS], folds[0].selected_go)
         self.assertEqual(stages["mi_select"], 100)
         for count in pipeline.GO_FEATURE_COUNT_CANDIDATES:
-            self.assertEqual(len(pipeline.feature_names_for(ranked_go[:count])), count + 9)
+            self.assertEqual(
+                len(pipeline.feature_names_for(ranked_go[:count])),
+                count + pipeline.N_ENGINEERED_FEATURES,
+            )
 
     def test_deterministic_seed_derivation(self) -> None:
         cases = {

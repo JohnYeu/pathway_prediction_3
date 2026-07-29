@@ -16,8 +16,8 @@ The pipeline:
 
 1. rebuilds pathways and GO annotations from raw KEGG, AraCyc, and TAIR files;
 2. splits positive pathways before generating split-specific controls;
-3. selects 60 GO terms from the primary training records and constructs the
-   69-dimensional representation described in the paper;
+3. selects 80 GO terms from the primary training records and constructs an
+   89-dimensional representation;
 4. regenerates the four control classes used by this analysis
    (random[5,30], shuffled, partial, cross-pathway);
 5. runs the main benchmark, ratio sensitivity, model comparison, ablation,
@@ -130,7 +130,9 @@ SEED = 42
 # pathway.  Other ratios remain available as isolated sensitivity branches.
 DEFAULT_PRIMARY_RATIO = 1
 SUPPORTED_PRIMARY_RATIOS = (1, 2, 3, 4, 5)
-N_GO_TERMS = 60
+N_GO_TERMS = 80
+N_ENGINEERED_FEATURES = 9
+N_TOTAL_FEATURES = N_GO_TERMS + N_ENGINEERED_FEATURES
 GO_FEATURE_COUNT_CANDIDATES = (20, 40, 60, 80, 100)
 MIN_PATHWAY_GENES = 5
 PRIMARY_TEST_SIZE = 0.20
@@ -138,7 +140,10 @@ PRIMARY_TRAIN_NEGATIVE_SEED = SEED + 100
 PRIMARY_TEST_NEGATIVE_SEED = SEED + 200
 CV_REPEAT_SEEDS = (42, 7, 13)
 NEGATIVE_SCHEME = "four_type_random_shuffled_partial_cross"
-GO_SELECTION_MODE = "outer_train_fixed60_with_nested_ratio_cv"
+GO_SELECTION_MODE = f"outer_train_fixed{N_GO_TERMS}_with_nested_ratio_cv"
+NESTED_GO_SELECTION_PROTOCOL = f"nested_fold_training_selected{N_GO_TERMS}"
+OUTER_TRAIN_GO_SELECTION_PROTOCOL = f"outer_training_selected{N_GO_TERMS}"
+PRIMARY_FIXED_GO_SELECTION_PROTOCOL = f"primary_train_fixed{N_GO_TERMS}"
 MODEL_COMPARISON_PROTOCOL = "heldout_only"
 SCALE_POS_WEIGHT_RULE = "dynamic_n_negative_train_over_n_positive_train"
 SCALE_POS_WEIGHT_LOG: List[Dict[str, Any]] = []
@@ -176,8 +181,8 @@ class DatasetBundle:
         gene_go:        gene -> set of GO terms
         go_genes:       GO term -> set of genes (reverse index)
         go_term_names:  GO ID -> human-readable name
-        selected_go:    60 GO terms surviving 4-stage feature selection
-        feature_names:  ordered list of all 69 feature column names
+        selected_go:    GO terms surviving 4-stage feature selection
+        feature_names:  ordered list of GO and engineered feature columns
         feature_stages: stage name -> count at each selection step
         source:         "raw" or "cached" indicating data provenance
     """
@@ -224,7 +229,7 @@ class PrimaryContext:
     """Canonical outer split and training-selected feature representation.
 
     The positive pathways are split before any source-derived controls are made.
-    GO variance/MI selection sees only ``train_records``.  The resulting 60 GO
+    GO variance/MI selection sees only ``train_records``.  The resulting GO
     terms are then fixed for every paper analysis, including held-out comparison,
     ratio sensitivity, ablation, and SHAP.
     """
@@ -1052,7 +1057,7 @@ def load_cached_bundle() -> DatasetBundle:
 #   positives: KEGG + AraCyc curated pathways
 #   negatives: random[5,30], full replacement shuffled, partial 50-80%,
 #              and cross-pathway mixtures
-#   features:  60 GO frequency terms + 9 hand-engineered pathway descriptors
+#   features:  N_GO_TERMS GO frequencies + N_ENGINEERED_FEATURES descriptors
 #
 # This section keeps that logic explicit so the generated outputs stay aligned
 # with the current manuscript.
@@ -1179,8 +1184,8 @@ def generate_negative_gene_sets(
 
 
 def feature_names_for(selected_go: Sequence[str]) -> List[str]:
-    """Return the ordered 60 GO + 9 engineered feature names."""
-    return list(selected_go) + [
+    """Return the ordered GO-frequency and engineered feature names."""
+    names = list(selected_go) + [
         "jaccard_mean",
         "jaccard_min",
         "jaccard_max",
@@ -1191,6 +1196,9 @@ def feature_names_for(selected_go: Sequence[str]) -> List[str]:
         "go_size_std",
         "mean_go_per_gene",
     ]
+    if len(names) != len(selected_go) + N_ENGINEERED_FEATURES:
+        raise AssertionError("Engineered feature-name count does not match the configured layout.")
+    return names
 
 
 def select_go_terms_from_records(
@@ -1302,19 +1310,16 @@ def load_raw_bundle(raw_dir: Path) -> DatasetBundle:
 
 
 def build_feature_vector(genes: Sequence[str], selected_go: Sequence[str], gene_go: Mapping[str, set]) -> np.ndarray:
-    """Build the 69-dimensional feature vector for one gene set.
+    """Build one GO-frequency plus engineered feature vector.
 
-    Feature layout (total D = len(selected_go) + 9 = 69):
-      [0:60]   GO-frequency features: fraction of genes annotated with each GO term
-      [60]     jaccard_mean:     mean pairwise GO-set Jaccard among genes
-      [61]     jaccard_min:      minimum pairwise Jaccard
-      [62]     jaccard_max:      maximum pairwise Jaccard
-      [63]     jaccard_std:      standard deviation of pairwise Jaccard
-      [64]     annotated_gene_count:     number of genes in G* with GO annotation
-      [65]     log_annotated_gene_count: log(1 + annotated_gene_count)
-      [66]     go_entropy:       Shannon entropy of GO frequency distribution
-      [67]     go_size_std:      std of per-gene GO annotation counts
-      [68]     mean_go_per_gene: mean number of GO terms per gene
+    Feature layout (total D = len(selected_go) + N_ENGINEERED_FEATURES):
+      [0:d]     GO-frequency features: fraction of genes annotated with each GO term
+      [d:d+4]   mean/min/max/std pairwise GO-set Jaccard
+      [d+4]     annotated_gene_count
+      [d+5]     log(1 + annotated_gene_count)
+      [d+6]     Shannon entropy of the selected-GO frequency distribution
+      [d+7]     std of per-gene GO annotation counts
+      [d+8]     mean number of GO terms per gene
 
     Pairwise Jaccard uses all annotated genes when ``|G*| <= 30``.  Larger
     sets use 30 genes selected by :func:`select_genes_for_jaccard`, whose
@@ -1323,7 +1328,7 @@ def build_feature_vector(genes: Sequence[str], selected_go: Sequence[str], gene_
     """
     valid = [g for g in genes if g in gene_go]
     if not valid:
-        return np.zeros(len(selected_go) + 9, dtype=np.float32)
+        return np.zeros(len(selected_go) + N_ENGINEERED_FEATURES, dtype=np.float32)
     go_sets = [set(gene_go.get(g, set())) for g in valid]
     n = len(valid)
     freq = [sum(1 for s in go_sets if term in s) / n for term in selected_go]
@@ -1338,7 +1343,7 @@ def build_feature_vector(genes: Sequence[str], selected_go: Sequence[str], gene_
     freq_arr = np.array(freq, dtype=np.float64)
     if float(freq_arr.sum()) <= 0.0:
         # No selected GO signal should mean no entropy evidence, not a uniform
-        # 60-bin distribution with the artificial maximum entropy ln(60).
+        # selected-term distribution with artificially high entropy.
         entropy = 0.0
     else:
         # Preserve the existing smoothing for non-zero profiles so this boundary
@@ -2233,7 +2238,7 @@ def save_cv_fold_outputs(folds: Sequence[CVFoldData], context: PrimaryContext) -
     save_json(
         DATA_DIR / "cv_fold_manifest.json",
         {
-            "feature_selection_protocol": "fold_training_selected60",
+            "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
             "nested_feature_selection": True,
             "outer_training_selected_go_sha256": stable_json_sha256(context.selected_go),
             "folds": manifest_rows,
@@ -2273,8 +2278,8 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
             "primary_ratio": ratio_label,
             "cv_auroc_mean": cv_mean,
             "cv_auroc_sd": cv_sd,
-            "cv_feature_selection_protocol": "nested_fold_training_selected60",
-            "heldout_feature_selection_protocol": "outer_training_selected60",
+            "cv_feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+            "heldout_feature_selection_protocol": OUTER_TRAIN_GO_SELECTION_PROTOCOL,
             "scale_pos_weight": spw if name == "XGBoost" else float("nan"),
             "elapsed_s": time.time() - t0,
         }
@@ -2447,7 +2452,7 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
             "n_folds": len(subset),
             "preselected_primary_ratio": ratio == DEFAULT_PRIMARY_RATIO,
             "mean_positive_prevalence": float(subset["positive_prevalence"].mean()),
-            "feature_selection_protocol": "nested_fold_training_selected60",
+            "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
         }
         for metric in metric_columns:
             row[f"mean_{metric}"] = float(subset[metric].mean())
@@ -2553,7 +2558,9 @@ def ranked_go_terms_for_fold(
     if len(ranked_go) != max_count:
         raise AssertionError(f"Expected {max_count} ranked GO terms, got {len(ranked_go)}.")
     if N_GO_TERMS <= max_count and ranked_go[:N_GO_TERMS] != fold.selected_go:
-        raise AssertionError("The top-60 prefix changed during feature-count comparison.")
+        raise AssertionError(
+            f"The top-{N_GO_TERMS} prefix changed during feature-count comparison."
+        )
     return list(ranked_go), dict(stages)
 
 
@@ -2606,7 +2613,7 @@ def evaluate_go_feature_count_folds(
             per_fold_rows.append(
                 {
                     "n_go_terms": count,
-                    "n_total_features": count + 9,
+                    "n_total_features": count + N_ENGINEERED_FEATURES,
                     "repeat_index": fold.repeat_index,
                     "repeat_seed": fold.repeat_seed,
                     "fold_index": fold.fold_index,
@@ -2637,7 +2644,7 @@ def evaluate_go_feature_count_folds(
             manifest_rows.append(
                 {
                     "n_go_terms": count,
-                    "n_total_features": count + 9,
+                    "n_total_features": count + N_ENGINEERED_FEATURES,
                     "repeat_index": fold.repeat_index,
                     "repeat_seed": fold.repeat_seed,
                     "fold_index": fold.fold_index,
@@ -2698,7 +2705,7 @@ def run_go_feature_count_sensitivity(
         subset = per_fold_df[per_fold_df["n_go_terms"] == count]
         row: Dict[str, Any] = {
             "n_go_terms": count,
-            "n_total_features": count + 9,
+            "n_total_features": count + N_ENGINEERED_FEATURES,
             "n_folds": len(subset),
             "preselected_feature_count": count == N_GO_TERMS,
             "feature_selection_protocol": "fold_training_variance_mi_top_k",
@@ -2716,19 +2723,19 @@ def run_go_feature_count_sensitivity(
             pooled_sd = math.sqrt(
                 (row[f"sd_{metric}"] ** 2 + reference[f"sd_{metric}"] ** 2) / 2.0
             )
-            row[f"delta_{metric}_vs_60"] = delta
-            row[f"delta_{metric}_over_pooled_sd_vs_60"] = (
+            row[f"delta_{metric}_vs_reference"] = delta
+            row[f"delta_{metric}_over_pooled_sd_vs_reference"] = (
                 delta / pooled_sd if pooled_sd > 0 else float("nan")
             )
 
     best_auroc = max(summary_rows, key=lambda row: row["mean_auroc"])
     best_auprc = max(summary_rows, key=lambda row: row["mean_auprc"])
     best_f1 = max(summary_rows, key=lambda row: row["mean_f1"])
-    larger_rows = [row for row in summary_rows if row["n_go_terms"] > N_GO_TERMS]
-    larger_improvements_within_one_pooled_sd = all(
-        row["delta_auroc_over_pooled_sd_vs_60"] <= 1.0
-        and row["delta_auprc_over_pooled_sd_vs_60"] <= 1.0
-        for row in larger_rows
+    alternative_rows = [row for row in summary_rows if row["n_go_terms"] != N_GO_TERMS]
+    all_differences_within_one_pooled_sd = all(
+        abs(row["delta_auroc_over_pooled_sd_vs_reference"]) <= 1.0
+        and abs(row["delta_auprc_over_pooled_sd_vs_reference"]) <= 1.0
+        for row in alternative_rows
     )
 
     save_table(TABLE_DIR / "go_feature_count_cv_per_fold.csv", per_fold_rows)
@@ -2747,11 +2754,11 @@ def run_go_feature_count_sensitivity(
             "best_mean_auroc_go_count": int(best_auroc["n_go_terms"]),
             "best_mean_auprc_go_count": int(best_auprc["n_go_terms"]),
             "best_mean_f1_go_count": int(best_f1["n_go_terms"]),
-            "larger_count_improvements_within_one_pooled_sd_of_60": (
-                larger_improvements_within_one_pooled_sd
+            "all_candidate_differences_within_one_pooled_sd_of_reference": (
+                all_differences_within_one_pooled_sd
             ),
             "interpretation_note": (
-                "This is a sensitivity analysis of the preselected 60-term representation. "
+                f"This is a sensitivity analysis of the primary {N_GO_TERMS}-term representation. "
                 "It reports paired fold differences and does not use the outer test set or "
                 "automatically select a winner."
             ),
@@ -2778,7 +2785,13 @@ def run_go_feature_count_sensitivity(
         color="#d62728",
         label="AUPRC",
     )
-    ax.axvline(N_GO_TERMS, color="#666666", linestyle="--", linewidth=1.2, label="Current setting (60)")
+    ax.axvline(
+        N_GO_TERMS,
+        color="#666666",
+        linestyle="--",
+        linewidth=1.2,
+        label=f"Primary setting ({N_GO_TERMS})",
+    )
     ax.set_xticks(x)
     ax.set_xlabel("Number of selected GO terms")
     ax.set_ylabel("Cross-validated metric (mean +/- SD)")
@@ -2812,7 +2825,7 @@ def run_go_feature_count_sensitivity(
         color="#666666",
         linestyle="--",
         linewidth=1.2,
-        label="Current setting (60)",
+        label=f"Primary setting ({N_GO_TERMS})",
     )
     for count, runtime in zip(x, mean_runtime):
         ax.annotate(
@@ -2850,7 +2863,7 @@ def run_go_feature_count_sensitivity(
         color="#666666",
         linestyle="--",
         linewidth=1.2,
-        label="Current setting (60)",
+        label=f"Primary setting ({N_GO_TERMS})",
     )
     for count, runtime in zip(x, mean_runtime):
         ax.annotate(
@@ -2990,7 +3003,7 @@ def run_model_comparison(
     and reports held-out metrics only.  Cross-validation is reserved for the
     main XGBoost/RF/LR benchmark and ratio-sensitivity analyses.
     """
-    # All models see exactly the same samples and the same 69 columns.  This
+    # All models see exactly the same samples and feature columns.  This
     # makes the table a model comparison rather than a comparison of different
     # random splits or feature-selection outcomes.
     X_train, y_train = context.X_train, context.y_train
@@ -3020,7 +3033,7 @@ def run_model_comparison(
             "model": name,
             "primary_ratio": ratio_label,
             "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
-            "feature_selection_protocol": "primary_train_fixed60",
+            "feature_selection_protocol": PRIMARY_FIXED_GO_SELECTION_PROTOCOL,
             "selected_go_sha256": selected_go_sha256,
             "primary_split_sha256": split_sha256,
             "status": "ok",
@@ -3046,7 +3059,7 @@ def run_model_comparison(
                 "model": name,
                 "primary_ratio": ratio_label,
                 "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
-                "feature_selection_protocol": "primary_train_fixed60",
+                "feature_selection_protocol": PRIMARY_FIXED_GO_SELECTION_PROTOCOL,
                 "selected_go_sha256": selected_go_sha256,
                 "primary_split_sha256": split_sha256,
                 "status": "skipped_missing_dependency",
@@ -3109,12 +3122,13 @@ def feature_group_indices(bundle: DatasetBundle) -> Dict[str, List[int]]:
     """
     n_go = len(bundle.selected_go)
     return {
-        "full": list(range(n_go + 9)),
+        "full": list(range(n_go + N_ENGINEERED_FEATURES)),
         "go_only": list(range(n_go)),
         "jaccard_only": list(range(n_go, n_go + 4)),
-        "size_only": list(range(n_go + 4, n_go + 9)),
-        "minus_go": list(range(n_go, n_go + 9)),
-        "minus_jaccard": list(range(n_go)) + list(range(n_go + 4, n_go + 9)),
+        "size_only": list(range(n_go + 4, n_go + N_ENGINEERED_FEATURES)),
+        "minus_go": list(range(n_go, n_go + N_ENGINEERED_FEATURES)),
+        "minus_jaccard": list(range(n_go))
+        + list(range(n_go + 4, n_go + N_ENGINEERED_FEATURES)),
         "minus_size": list(range(n_go + 4)),
     }
     # Note: "keep two groups" configs (e.g. GO+Jaccard) are omitted because they
@@ -3141,7 +3155,7 @@ def run_ablation(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> 
             "configuration": name,
             "primary_ratio": ratio_label,
             "d": len(cols),
-            "feature_selection_protocol": "primary_train_fixed60",
+            "feature_selection_protocol": PRIMARY_FIXED_GO_SELECTION_PROTOCOL,
             "scale_pos_weight": spw,
         }
         row.update(metrics_from_scores(y_test, scores))
@@ -3719,10 +3733,10 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
             "negative_ratio_sensitivity",
             "go_feature_count_sensitivity",
         }:
-            row["feature_selection_protocol"] = "nested_fold_training_selected60_for_cv"
+            row["feature_selection_protocol"] = f"{NESTED_GO_SELECTION_PROTOCOL}_for_cv"
             row["nested_feature_selection"] = True
         else:
-            row["feature_selection_protocol"] = "fixed_outer_training_selected60"
+            row["feature_selection_protocol"] = f"fixed_{OUTER_TRAIN_GO_SELECTION_PROTOCOL}"
             row["nested_feature_selection"] = False
         row["negative_source_isolation"] = True
     return rows
@@ -3862,6 +3876,9 @@ def save_manifest(
         "dataset_mode": dataset_mode_from_args(args),
         "negative_scheme": NEGATIVE_SCHEME,
         "go_selection_mode": GO_SELECTION_MODE,
+        "n_selected_go_terms": len(context.selected_go),
+        "n_engineered_features": N_ENGINEERED_FEATURES,
+        "n_total_features": len(context.feature_names),
         "feature_selection_scope": {
             "heldout_models": "outer_train_only",
             "ratio_cv": "fold_train_only_for_variance_and_mutual_information",
@@ -3914,7 +3931,7 @@ def save_manifest(
         "result_summary": summary,
         "notes": [
             "Raw mode rebuilds the dataset from the documented TAIR, KEGG, and PMN/AraCyc inputs.",
-            "The 60 GO terms are selected only from the primary outer-training records.",
+            f"The {N_GO_TERMS} GO terms are selected only from the primary outer-training records.",
             "Ratio comparison repeats variance and mutual-information selection inside each fold training side.",
             "Source-derived negative controls are generated independently on each split side.",
             "The supplementary 13-model comparison uses the common held-out split.",

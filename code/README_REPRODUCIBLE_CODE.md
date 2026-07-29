@@ -78,16 +78,16 @@ generated. KEGG/AraCyc proportions are preserved with a fixed seed-42 split.
 Training controls are derived only from training pathways, and test controls
 are derived only from test pathways.
 
-The 60 GO-frequency terms are selected once using the primary training records:
+The 80 GO-frequency terms are selected once using the primary training records:
 
 ```text
 label-free background frequency filter
 -> variance filter on primary training records
 -> mutual-information ranking on primary training labels
--> top 60 GO terms
+-> top 80 GO terms
 ```
 
-Held-out reference models and supplementary classifiers use the same 60 terms
+Held-out reference models and supplementary classifiers use the same 80 terms
 selected from the complete outer-training side. Ratio comparison is performed
 only inside outer training. Each ratio/fold independently generates controls
 and repeats variance and mutual-information selection on fold training. The
@@ -119,7 +119,7 @@ cannot overwrite the paper results.
 
 The `ratio` section compares 1:1 through 1:5 only within outer training by
 three-repeat, five-fold cross-validation in full mode. Each fold selects its own
-60 GO terms. The table reports raw AUPRC, its random prevalence baseline, and
+80 GO terms. The table reports raw AUPRC, its random prevalence baseline, and
 normalized AUPRC. The normalization is useful for context but does not make PR
 performance completely independent of prevalence. The code records 1:1 as the
 preselected candidate and does not select a winner automatically.
