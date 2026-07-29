@@ -3146,6 +3146,7 @@ def run_model_comparison(
         row["rank_by_mean_auroc"] = i if row["status"] == "ok" else float("nan")
     save_table(TABLE_DIR / "model_comparison_per_fold.csv", per_fold_rows)
     save_table_aliases(rows, "model_comparison.csv", "table_method_comparison.csv")
+    (TABLE_DIR / "model_comparison_per_fold_partial.csv").unlink(missing_ok=True)
 
     successful = [row for row in rows if row["status"] == "ok"]
     ordered = successful[::-1]
@@ -4329,7 +4330,7 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
     lines = [
         "# Primary and candidate analysis comparison",
         "",
-        "The primary result directory remains unchanged. Values below are read from its saved outputs and compared with this candidate run.",
+        "Values below compare the previously saved primary outputs with this run. The table records the pre-promotion comparison.",
         "",
         f"- Source records retained: {len(bundle.source_pathways)}",
         f"- Unique gene-set modelling instances: {len(bundle.pathways)}",
