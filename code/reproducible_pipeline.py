@@ -144,9 +144,11 @@ GO_SELECTION_MODE = f"outer_train_fixed{N_GO_TERMS}_with_nested_ratio_cv"
 NESTED_GO_SELECTION_PROTOCOL = f"nested_fold_training_selected{N_GO_TERMS}"
 OUTER_TRAIN_GO_SELECTION_PROTOCOL = f"outer_training_selected{N_GO_TERMS}"
 PRIMARY_FIXED_GO_SELECTION_PROTOCOL = f"primary_train_fixed{N_GO_TERMS}"
-MODEL_COMPARISON_PROTOCOL = "heldout_only"
 SCALE_POS_WEIGHT_RULE = "dynamic_n_negative_train_over_n_positive_train"
 SCALE_POS_WEIGHT_LOG: List[Dict[str, Any]] = []
+PRIMARY_MODEL_NAME = "Random Forest"
+PRIMARY_MODEL_SLUG = "random_forest"
+MODEL_COMPARISON_PROTOCOL = "outer_training_repeated_stratified_cv"
 
 # Pairwise Jaccard uses every annotated gene for small and medium gene sets.
 # Larger sets use a deterministic local sample so feature construction remains
@@ -299,6 +301,7 @@ def remove_obsolete_analysis_outputs() -> None:
         LATEX_TABLE_DIR / "table_lofo.tex",
         FIG_DIR / "lofo.png",
         FIG_DIR / "Fig6_lofo.png",
+        TABLE_DIR / "model_comparison_partial.csv",
     ]
     for path in obsolete_paths:
         if path.exists():
@@ -1659,10 +1662,10 @@ def xgb_model(
     random_state: int = SEED,
     n_jobs: int = -1,
 ) -> XGBClassifier:
-    """Create an XGBoost classifier with paper-aligned hyperparameters.
+    """Create the XGBoost estimator used in the model-comparison analysis.
 
-    Full mode is the paper configuration and matches the LaTeX/ML notebook
-    setting of 500 trees.  --quick mode uses fewer trees only for fast checks.
+    Full mode uses the locked 500-tree comparison configuration. --quick mode
+    uses fewer trees only for fast checks.
     The caller supplies the analysis-specific ``scale_pos_weight`` computed
     from the current training split.
     """
@@ -1683,6 +1686,32 @@ def xgb_model(
         n_jobs=n_jobs,
         verbosity=0,
     )
+
+
+def random_forest_model(
+    fast: bool = False,
+    random_state: int = SEED,
+    n_jobs: int = 1,
+) -> RandomForestClassifier:
+    """Create the Random Forest used by the primary analysis.
+
+    Keeping this constructor in one place ensures that held-out evaluation,
+    ratio sensitivity, feature-count sensitivity, ablation, and SHAP all use
+    the same formal model configuration.
+    """
+    return RandomForestClassifier(
+        n_estimators=120 if fast else 500,
+        max_depth=10,
+        max_features="sqrt",
+        class_weight="balanced",
+        random_state=random_state,
+        n_jobs=n_jobs,
+    )
+
+
+def primary_model(fast: bool = False, random_state: int = SEED) -> RandomForestClassifier:
+    """Return a fresh estimator for the current primary-model protocol."""
+    return random_forest_model(fast=fast, random_state=random_state)
 
 
 def predict_scores(model: Any, X: np.ndarray) -> np.ndarray:
@@ -1717,7 +1746,7 @@ def heldout_diagnostic_tables(
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Build traceable held-out prediction and negative-type summaries.
 
-    These tables all come from the same score vector used for the main XGBoost
+    These tables all come from the same score vector used for the primary-model
     row. Keeping the calculation here prevents the diagnostic figures from
     silently fitting a second model with different settings.
     """
@@ -1832,9 +1861,10 @@ def heldout_diagnostic_tables(
 def save_heldout_diagnostics(
     context: PrimaryContext,
     scores: np.ndarray,
+    model_name: str = PRIMARY_MODEL_NAME,
     threshold: float = 0.5,
 ) -> Dict[str, Any]:
-    """Save held-out tables and figures from the fitted reference XGBoost model."""
+    """Save held-out tables and figures from the fitted primary model."""
     diagnostics = heldout_diagnostic_tables(
         context.test_records,
         context.y_test,
@@ -1859,7 +1889,7 @@ def save_heldout_diagnostics(
 
     blue, orange, teal = "#4c78a8", "#f58518", "#72b7b2"
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.6))
-    axes[0].plot(fpr, tpr, color=blue, lw=2.2, label=f"XGBoost (AUROC = {auroc:.3f})")
+    axes[0].plot(fpr, tpr, color=blue, lw=2.2, label=f"{model_name} (AUROC = {auroc:.3f})")
     axes[0].plot([0, 1], [0, 1], "--", color="#999999", lw=1, label="Random (0.500)")
     axes[0].set_xlabel("False positive rate (FP / (FP+TN))")
     axes[0].set_ylabel("True positive rate / recall (TP / (TP+FN))")
@@ -1872,7 +1902,7 @@ def save_heldout_diagnostics(
         precision_values,
         color=orange,
         lw=2.2,
-        label=f"XGBoost (AUPRC = {auprc:.3f})",
+        label=f"{model_name} (AUPRC = {auprc:.3f})",
     )
     axes[1].axhline(
         baseline,
@@ -1887,7 +1917,7 @@ def save_heldout_diagnostics(
     axes[1].legend(loc="lower left", fontsize=9)
     axes[1].set_xlim(-0.02, 1.02)
     axes[1].set_ylim(-0.02, 1.02)
-    fig.suptitle("Held-out discrimination of the reference XGBoost model", fontweight="bold")
+    fig.suptitle(f"Held-out discrimination of the {model_name} model", fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(FIG_DIR / "FigC_roc_pr.png", dpi=220)
     plt.close(fig)
@@ -1974,7 +2004,8 @@ def save_heldout_diagnostics(
     plt.close(fig)
 
     manifest = {
-        "source": "reference XGBoost scores from run_main_benchmark",
+        "source": f"{model_name} scores from run_main_benchmark",
+        "model": model_name,
         "threshold": threshold,
         "primary_ratio": f"1:{context.ratio}",
         "n_test": len(y_true),
@@ -2120,7 +2151,7 @@ def cv_auroc_from_folds(
     model_factory: Callable[[float, int], Any],
     folds: Sequence[CVFoldData],
 ) -> Tuple[float, float]:
-    """Evaluate one model on prebuilt folds shared by all reference models."""
+    """Evaluate one model on prebuilt source-isolated folds."""
     scores: List[float] = []
     for fold in folds:
         model = model_factory(fold.scale_pos_weight, fold.model_seed)
@@ -2139,37 +2170,6 @@ def cv_auroc_from_folds(
 #   2. save a machine-readable CSV under generated/tables/,
 #   3. when useful, save a paper-facing figure/table fragment.
 #
-def reference_model_factories(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
-    """Return fresh reference-model builders for fold and held-out fitting."""
-    return {
-        "XGBoost": lambda spw, model_seed: xgb_model(
-            scale_pos_weight=spw, fast=fast, random_state=model_seed
-        ),
-        "Random Forest": lambda _spw, model_seed: RandomForestClassifier(
-            n_estimators=120 if fast else 500,
-            max_depth=10,
-            max_features="sqrt",
-            class_weight="balanced",
-            random_state=model_seed,
-            n_jobs=-1,
-        ),
-        "Logistic Regression": lambda _spw, model_seed: Pipeline(
-            [
-                ("scaler", StandardScaler()),
-                (
-                    "clf",
-                    LogisticRegression(
-                        solver="lbfgs",
-                        max_iter=5000,
-                        class_weight="balanced",
-                        random_state=model_seed,
-                    ),
-                ),
-            ]
-        ),
-    }
-
-
 def save_cv_fold_outputs(folds: Sequence[CVFoldData], context: PrimaryContext) -> None:
     """Persist nested primary-CV metadata without serialising feature matrices."""
     outer_test_ids = {str(record["id"]) for record in context.test_positive_records}
@@ -2247,11 +2247,12 @@ def save_cv_fold_outputs(folds: Sequence[CVFoldData], context: PrimaryContext) -
 
 
 def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> Dict[str, Any]:
-    """Main held-out benchmark: XGBoost, RF, and Logistic Regression on an 80:20 split.
+    """Fit and evaluate the selected Random Forest on the untouched outer test.
 
     The outer test set did not participate in GO selection or negative-source
-    construction.  Repeated CV uses source-isolated folds and repeats GO
-    variance/MI selection within each fold's training side.
+    construction. Repeated CV uses source-isolated folds and repeats GO
+    variance/MI selection within each fold's training side. Other model
+    families are compared separately using outer-training cross-validation.
     """
     ratio_label = f"1:{context.ratio}"
     folds = build_cv_fold_datasets(
@@ -2262,31 +2263,26 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         analysis_name="main_benchmark_cv",
     )
     save_cv_fold_outputs(folds, context)
-    spw = scale_pos_weight_from_labels(context.y_train, "main_benchmark", {"ratio": ratio_label})
-    factories = reference_model_factories(fast)
-    rows = []
-    fitted: Dict[str, Any] = {}
-    heldout_scores: Dict[str, np.ndarray] = {}
-    for name, factory in factories.items():
-        t0 = time.time()
-        cv_mean, cv_sd = cv_auroc_from_folds(factory, folds)
-        model = factory(spw, SEED)
-        model.fit(context.X_train, context.y_train)
-        scores = predict_scores(model, context.X_test)
-        row = {
-            "model": name,
-            "primary_ratio": ratio_label,
-            "cv_auroc_mean": cv_mean,
-            "cv_auroc_sd": cv_sd,
-            "cv_feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
-            "heldout_feature_selection_protocol": OUTER_TRAIN_GO_SELECTION_PROTOCOL,
-            "scale_pos_weight": spw if name == "XGBoost" else float("nan"),
-            "elapsed_s": time.time() - t0,
-        }
-        row.update(metrics_from_scores(context.y_test, scores))
-        rows.append(row)
-        fitted[name] = model
-        heldout_scores[name] = np.asarray(scores, dtype=float)
+    t0 = time.time()
+    factory = lambda _spw, model_seed: primary_model(fast=fast, random_state=model_seed)
+    cv_mean, cv_sd = cv_auroc_from_folds(factory, folds)
+    model = primary_model(fast=fast, random_state=SEED)
+    model.fit(context.X_train, context.y_train)
+    scores = np.asarray(predict_scores(model, context.X_test), dtype=float)
+    row = {
+        "model": PRIMARY_MODEL_NAME,
+        "model_role": "primary",
+        "primary_ratio": ratio_label,
+        "cv_auroc_mean": cv_mean,
+        "cv_auroc_sd": cv_sd,
+        "cv_feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+        "heldout_feature_selection_protocol": OUTER_TRAIN_GO_SELECTION_PROTOCOL,
+        "scale_pos_weight": float("nan"),
+        "class_weight": "balanced",
+        "elapsed_s": time.time() - t0,
+    }
+    row.update(metrics_from_scores(context.y_test, scores))
+    rows = [row]
 
     save_table_aliases(rows, "main_benchmark.csv", "table_main_benchmark.csv")
     latex_df = pd.DataFrame(rows)[
@@ -2299,7 +2295,7 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         "Main held-out benchmark.",
         "tab:main_benchmark_recomputed",
     )
-    save_heldout_diagnostics(context, heldout_scores["XGBoost"])
+    save_heldout_diagnostics(context, scores, model_name=PRIMARY_MODEL_NAME)
     return {
         "rows": rows,
         "X_train": context.X_train,
@@ -2308,8 +2304,8 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         "y_test": context.y_test,
         "train_records": context.train_records,
         "test_records": context.test_records,
-        "models": fitted,
-        "heldout_scores": heldout_scores,
+        "models": {PRIMARY_MODEL_NAME: model},
+        "heldout_scores": {PRIMARY_MODEL_NAME: scores},
     }
 
 
@@ -2321,14 +2317,10 @@ def normalized_auprc(raw_auprc: float, positive_prevalence: float) -> float:
 
 
 def evaluate_ratio_folds(folds: Sequence[CVFoldData], fast: bool) -> List[Dict[str, Any]]:
-    """Fit one XGBoost model per nested fold and return fold-level metrics."""
+    """Fit one primary Random Forest per nested fold and return metrics."""
     rows: List[Dict[str, Any]] = []
     for fold in folds:
-        model = xgb_model(
-            scale_pos_weight=fold.scale_pos_weight,
-            fast=fast,
-            random_state=fold.model_seed,
-        )
+        model = primary_model(fast=fast, random_state=fold.model_seed)
         started = time.time()
         model.fit(fold.X_train, fold.y_train)
         scores = predict_scores(model, fold.X_validation)
@@ -2337,6 +2329,7 @@ def evaluate_ratio_folds(folds: Sequence[CVFoldData], fast: bool) -> List[Dict[s
         rows.append(
             {
                 "ratio": f"1:{fold.ratio}",
+                "model": PRIMARY_MODEL_NAME,
                 "ratio_value": fold.ratio,
                 "repeat_index": fold.repeat_index,
                 "repeat_seed": fold.repeat_seed,
@@ -2354,7 +2347,8 @@ def evaluate_ratio_folds(folds: Sequence[CVFoldData], fast: bool) -> List[Dict[s
                 "precision": metrics["precision"],
                 "recall": metrics["recall"],
                 "brier": metrics["brier"],
-                "scale_pos_weight": fold.scale_pos_weight,
+                "scale_pos_weight": float("nan"),
+                "class_weight": "balanced",
                 "train_negative_seed": fold.train_negative_seed,
                 "validation_negative_seed": fold.validation_negative_seed,
                 "feature_selection_seed": fold.feature_selection_seed,
@@ -2448,6 +2442,7 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
         subset = per_fold_df[per_fold_df["ratio_value"] == ratio]
         row: Dict[str, Any] = {
             "ratio": f"1:{ratio}",
+            "model": PRIMARY_MODEL_NAME,
             "ratio_value": ratio,
             "n_folds": len(subset),
             "preselected_primary_ratio": ratio == DEFAULT_PRIMARY_RATIO,
@@ -2482,6 +2477,7 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
         DATA_DIR / "ratio_cv_manifest.json",
         {
             "protocol": "outer-training-only repeated stratified CV",
+            "model": PRIMARY_MODEL_NAME,
             "outer_test_used": False,
             "preselected_primary_ratio": "1:1",
             "frequency_filter_scope": "label-free full GO-annotated background",
@@ -2599,11 +2595,7 @@ def evaluate_go_feature_count_folds(
                 selected_go,
                 bundle.gene_go,
             )
-            model = xgb_model(
-                scale_pos_weight=fold.scale_pos_weight,
-                fast=fast,
-                random_state=fold.model_seed,
-            )
+            model = primary_model(fast=fast, random_state=fold.model_seed)
             started = time.time()
             model.fit(X_train, y_train)
             scores = predict_scores(model, X_validation)
@@ -2613,6 +2605,7 @@ def evaluate_go_feature_count_folds(
             per_fold_rows.append(
                 {
                     "n_go_terms": count,
+                    "model": PRIMARY_MODEL_NAME,
                     "n_total_features": count + N_ENGINEERED_FEATURES,
                     "repeat_index": fold.repeat_index,
                     "repeat_seed": fold.repeat_seed,
@@ -2630,7 +2623,8 @@ def evaluate_go_feature_count_folds(
                     "precision": metrics["precision"],
                     "recall": metrics["recall"],
                     "brier": metrics["brier"],
-                    "scale_pos_weight": fold.scale_pos_weight,
+                    "scale_pos_weight": float("nan"),
+                    "class_weight": "balanced",
                     "train_negative_seed": fold.train_negative_seed,
                     "validation_negative_seed": fold.validation_negative_seed,
                     "feature_selection_seed": fold.feature_selection_seed,
@@ -2705,6 +2699,7 @@ def run_go_feature_count_sensitivity(
         subset = per_fold_df[per_fold_df["n_go_terms"] == count]
         row: Dict[str, Any] = {
             "n_go_terms": count,
+            "model": PRIMARY_MODEL_NAME,
             "n_total_features": count + N_ENGINEERED_FEATURES,
             "n_folds": len(subset),
             "preselected_feature_count": count == N_GO_TERMS,
@@ -2744,6 +2739,7 @@ def run_go_feature_count_sensitivity(
         DATA_DIR / "go_feature_count_cv_manifest.json",
         {
             "protocol": "outer-training-only repeated stratified nested cross-validation",
+            "model": PRIMARY_MODEL_NAME,
             "primary_ratio": "1:1",
             "candidate_go_counts": list(GO_FEATURE_COUNT_CANDIDATES),
             "preselected_go_count": N_GO_TERMS,
@@ -2898,15 +2894,10 @@ def run_go_feature_count_sensitivity(
     return summary_rows
 
 
-def model_catalog(fast: bool, scale_pos_weight: float) -> Dict[str, Any]:
-    """Return the 13-method model catalogue for the systematic comparison.
-
-    Includes: Logistic Regression, Linear SVM, RBF SVM, k-NN, Gaussian NB,
-    Random Forest, Extra Trees, Gradient Boosting, XGBoost, MLP, AdaBoost,
-    and optionally LightGBM and CatBoost (if installed).
-    """
-    models: Dict[str, Any] = {
-        "Logistic Regression": Pipeline(
+def model_factory_catalog(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
+    """Return fresh builders for the training-only 13-model comparison."""
+    factories: Dict[str, Callable[[float, int], Any]] = {
+        "Logistic Regression": lambda _spw, seed: Pipeline(
             [
                 ("scaler", StandardScaler()),
                 (
@@ -2915,40 +2906,58 @@ def model_catalog(fast: bool, scale_pos_weight: float) -> Dict[str, Any]:
                         solver="lbfgs",
                         max_iter=5000,
                         class_weight="balanced",
-                        random_state=SEED,
+                        random_state=seed,
                     ),
                 ),
             ]
         ),
-        "Linear SVM": Pipeline(
-            [("scaler", StandardScaler()), ("clf", SVC(kernel="linear", C=1.0, probability=True, random_state=SEED))]
+        "Linear SVM": lambda _spw, seed: Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                ("clf", SVC(kernel="linear", C=1.0, probability=True, random_state=seed)),
+            ]
         ),
-        "RBF SVM": Pipeline(
-            [("scaler", StandardScaler()), ("clf", SVC(kernel="rbf", C=5.0, gamma="scale", probability=True, random_state=SEED))]
+        "RBF SVM": lambda _spw, seed: Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                (
+                    "clf",
+                    SVC(
+                        kernel="rbf",
+                        C=5.0,
+                        gamma="scale",
+                        probability=True,
+                        random_state=seed,
+                    ),
+                ),
+            ]
         ),
-        "k-NN (k=7)": Pipeline([("scaler", StandardScaler()), ("clf", KNeighborsClassifier(n_neighbors=7))]),
-        "Gaussian Naive Bayes": GaussianNB(),
-        "Random Forest": RandomForestClassifier(
+        "k-NN (k=7)": lambda _spw, _seed: Pipeline(
+            [("scaler", StandardScaler()), ("clf", KNeighborsClassifier(n_neighbors=7))]
+        ),
+        "Gaussian Naive Bayes": lambda _spw, _seed: GaussianNB(),
+        "Random Forest": lambda _spw, seed: random_forest_model(
+            fast=fast, random_state=seed
+        ),
+        "Extra Trees": lambda _spw, seed: ExtraTreesClassifier(
             n_estimators=120 if fast else 500,
             max_depth=10,
             max_features="sqrt",
             class_weight="balanced",
-            random_state=SEED,
+            random_state=seed,
             n_jobs=-1,
         ),
-        "Extra Trees": ExtraTreesClassifier(
-            n_estimators=120 if fast else 500,
-            max_depth=10,
-            max_features="sqrt",
-            class_weight="balanced",
-            random_state=SEED,
-            n_jobs=-1,
+        "Gradient Boosting": lambda _spw, seed: GradientBoostingClassifier(
+            n_estimators=100 if fast else 300,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            random_state=seed,
         ),
-        "Gradient Boosting": GradientBoostingClassifier(
-            n_estimators=100 if fast else 300, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=SEED
+        "XGBoost": lambda spw, seed: xgb_model(
+            scale_pos_weight=spw, fast=fast, random_state=seed
         ),
-        "XGBoost": xgb_model(scale_pos_weight=scale_pos_weight, fast=fast),
-        "MLP": Pipeline(
+        "MLP": lambda _spw, seed: Pipeline(
             [
                 ("scaler", StandardScaler()),
                 (
@@ -2957,38 +2966,48 @@ def model_catalog(fast: bool, scale_pos_weight: float) -> Dict[str, Any]:
                         hidden_layer_sizes=(96, 48) if fast else (32,),
                         max_iter=160 if fast else 80,
                         early_stopping=True,
-                        random_state=SEED,
+                        random_state=seed,
                     ),
                 ),
             ]
         ),
-        "AdaBoost": AdaBoostClassifier(n_estimators=80 if fast else 200, random_state=SEED),
+        "AdaBoost": lambda _spw, seed: AdaBoostClassifier(
+            n_estimators=80 if fast else 200, random_state=seed
+        ),
     }
     if lgb is not None:
-        models["LightGBM"] = lgb.LGBMClassifier(
+        factories["LightGBM"] = lambda spw, seed: lgb.LGBMClassifier(
             n_estimators=160 if fast else 500,
             max_depth=5,
             learning_rate=0.05 if fast else 0.03,
             num_leaves=31 if fast else 63,
             subsample=0.8,
             colsample_bytree=0.7,
-            scale_pos_weight=scale_pos_weight,
-            random_state=SEED,
+            scale_pos_weight=spw,
+            random_state=seed,
             n_jobs=-1,
             verbose=-1,
         )
     if cb is not None:
-        models["CatBoost"] = cb.CatBoostClassifier(
+        factories["CatBoost"] = lambda spw, seed: cb.CatBoostClassifier(
             iterations=160 if fast else 500,
             depth=5,
             learning_rate=0.05 if fast else 0.03,
-            scale_pos_weight=scale_pos_weight,
-            random_seed=SEED,
+            scale_pos_weight=spw,
+            random_seed=seed,
             verbose=0,
             allow_writing_files=False,
             thread_count=-1,
         )
-    return models
+    return factories
+
+
+def model_catalog(fast: bool, scale_pos_weight: float) -> Dict[str, Any]:
+    """Build one deterministic catalogue instance for compatibility callers."""
+    return {
+        name: factory(scale_pos_weight, SEED)
+        for name, factory in model_factory_catalog(fast).items()
+    }
 
 
 def run_model_comparison(
@@ -2996,118 +3015,226 @@ def run_model_comparison(
     context: PrimaryContext,
     fast: bool,
 ) -> List[Dict[str, Any]]:
-    """Systematic comparison of all 13 ML methods on the same dataset.
+    """Compare all model families within outer training only.
 
-    The 13-model comparison is a supplementary model-selection check, not the
-    main validation protocol.  It therefore uses the same seed-42 held-out split
-    and reports held-out metrics only.  Cross-validation is reserved for the
-    main XGBoost/RF/LR benchmark and ratio-sensitivity analyses.
+    Every estimator receives the same source-isolated folds and the same
+    fold-specific GO representation. The untouched outer test is therefore
+    reserved for the selected Random Forest rather than used for model choice.
     """
-    # All models see exactly the same samples and feature columns.  This
-    # makes the table a model comparison rather than a comparison of different
-    # random splits or feature-selection outcomes.
-    X_train, y_train = context.X_train, context.y_train
-    X_test, y_test = context.X_test, context.y_test
     ratio_label = f"1:{context.ratio}"
-    spw = scale_pos_weight_from_labels(
-        y_train,
-        "supplementary_model_comparison",
-        {"ratio": ratio_label},
+    folds = build_cv_fold_datasets(
+        bundle,
+        context,
+        ratio=context.ratio,
+        fast=fast,
+        analysis_name="training_only_model_comparison",
     )
-    selected_go_sha256 = stable_json_sha256(context.selected_go)
-    split_sha256 = primary_split_sha256(context)
-    rows = []
-    models = model_catalog(fast, spw)
+    factories = model_factory_catalog(fast)
+    per_fold_rows: List[Dict[str, Any]] = []
     missing_optional = []
     if lgb is None:
         missing_optional.append("LightGBM")
     if cb is None:
         missing_optional.append("CatBoost")
 
-    for name, model in models.items():
+    for name, factory in factories.items():
         print(f"  - {name}", flush=True)
-        t0 = time.time()
-        model.fit(X_train, y_train)
-        scores = predict_scores(model, X_test)
-        row = {
+        for fold in folds:
+            started = time.time()
+            model = factory(fold.scale_pos_weight, fold.model_seed)
+            model.fit(fold.X_train, fold.y_train)
+            scores = predict_scores(model, fold.X_validation)
+            metrics = metrics_from_scores(fold.y_validation, scores)
+            prevalence = float(np.mean(fold.y_validation == 1))
+            per_fold_rows.append(
+                {
+                    "model": name,
+                    "primary_model": name == PRIMARY_MODEL_NAME,
+                    "primary_ratio": ratio_label,
+                    "repeat_index": fold.repeat_index,
+                    "repeat_seed": fold.repeat_seed,
+                    "fold_index": fold.fold_index,
+                    "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
+                    "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+                    "selected_go_sha256": fold.selected_go_sha256,
+                    "train_records_sha256": stable_json_sha256(
+                        [(record["id"], record["genes"]) for record in fold.train_records]
+                    ),
+                    "validation_records_sha256": stable_json_sha256(
+                        [(record["id"], record["genes"]) for record in fold.validation_records]
+                    ),
+                    "n_train": len(fold.y_train),
+                    "n_validation": len(fold.y_validation),
+                    "positive_prevalence": prevalence,
+                    "auroc": metrics["test_auroc"],
+                    "auprc": metrics["test_auprc"],
+                    "normalized_auprc": normalized_auprc(
+                        metrics["test_auprc"], prevalence
+                    ),
+                    "f1": metrics["f1"],
+                    "precision": metrics["precision"],
+                    "recall": metrics["recall"],
+                    "brier": metrics["brier"],
+                    "scale_pos_weight": (
+                        fold.scale_pos_weight
+                        if name in {"XGBoost", "LightGBM", "CatBoost"}
+                        else float("nan")
+                    ),
+                    "elapsed_s": time.time() - started,
+                }
+            )
+        save_table(TABLE_DIR / "model_comparison_per_fold_partial.csv", per_fold_rows)
+
+    per_fold_df = pd.DataFrame(per_fold_rows)
+    metric_columns = [
+        "auroc",
+        "auprc",
+        "normalized_auprc",
+        "f1",
+        "precision",
+        "recall",
+        "brier",
+        "elapsed_s",
+    ]
+    rows: List[Dict[str, Any]] = []
+    for name in factories:
+        subset = per_fold_df[per_fold_df["model"] == name]
+        row: Dict[str, Any] = {
             "model": name,
+            "primary_model": name == PRIMARY_MODEL_NAME,
             "primary_ratio": ratio_label,
             "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
-            "feature_selection_protocol": PRIMARY_FIXED_GO_SELECTION_PROTOCOL,
-            "selected_go_sha256": selected_go_sha256,
-            "primary_split_sha256": split_sha256,
+            "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+            "outer_test_used": False,
             "status": "ok",
-            "cv_auroc_mean": float("nan"),
-            "cv_auroc_sd": float("nan"),
-            "train_size": int(len(y_train)),
-            "test_size": int(len(y_test)),
-            "scale_pos_weight": spw,
-            "elapsed_s": time.time() - t0,
+            "n_folds": len(subset),
         }
-        row.update(metrics_from_scores(y_test, scores))
+        for metric in metric_columns:
+            row[f"mean_{metric}"] = float(subset[metric].mean())
+            row[f"sd_{metric}"] = (
+                float(subset[metric].std(ddof=1)) if len(subset) > 1 else 0.0
+            )
         rows.append(row)
-        # Checkpoint after every method.  Full model comparison can be slow, so
-        # this prevents losing completed methods if a later estimator hangs.
-        partial_rows = sorted(rows, key=lambda r: r["test_auroc"], reverse=True)
-        for i, partial_row in enumerate(partial_rows, 1):
-            partial_row["rank_by_auroc"] = i
-        save_table(TABLE_DIR / "model_comparison_partial.csv", partial_rows)
 
     for name in missing_optional:
         rows.append(
             {
                 "model": name,
                 "primary_ratio": ratio_label,
+                "primary_model": name == PRIMARY_MODEL_NAME,
                 "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
-                "feature_selection_protocol": PRIMARY_FIXED_GO_SELECTION_PROTOCOL,
-                "selected_go_sha256": selected_go_sha256,
-                "primary_split_sha256": split_sha256,
+                "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+                "outer_test_used": False,
                 "status": "skipped_missing_dependency",
-                "cv_auroc_mean": float("nan"),
-                "cv_auroc_sd": float("nan"),
-                "train_size": int(len(y_train)),
-                "test_size": int(len(y_test)),
-                "scale_pos_weight": spw,
-                "elapsed_s": float("nan"),
-                "test_auroc": float("nan"),
-                "test_auprc": float("nan"),
-                "f1": float("nan"),
-                "precision": float("nan"),
-                "recall": float("nan"),
-                "brier": float("nan"),
+                "n_folds": 0,
+                **{
+                    f"{prefix}_{metric}": float("nan")
+                    for metric in metric_columns
+                    for prefix in ("mean", "sd")
+                },
             }
         )
 
-    rows = sorted(rows, key=lambda r: (-1 if pd.isna(r["test_auroc"]) else r["test_auroc"]), reverse=True)
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            -1 if pd.isna(row["mean_auroc"]) else row["mean_auroc"]
+        ),
+        reverse=True,
+    )
     for i, row in enumerate(rows, 1):
-        row["rank_by_auroc"] = i
+        row["rank_by_mean_auroc"] = i if row["status"] == "ok" else float("nan")
+    save_table(TABLE_DIR / "model_comparison_per_fold.csv", per_fold_rows)
     save_table_aliases(rows, "model_comparison.csv", "table_method_comparison.csv")
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    ordered = rows[::-1]
-    axes[0].barh([r["model"] for r in ordered], [r["test_auroc"] for r in ordered])
-    axes[0].set_xlabel("Test AUROC")
-    axes[0].set_title("Method ranking")
-    axes[1].barh([r["model"] for r in ordered], [r["test_auprc"] for r in ordered], color="#4c78a8")
-    axes[1].set_xlabel("Test AUPRC")
-    axes[1].set_title("Precision-recall performance")
+    successful = [row for row in rows if row["status"] == "ok"]
+    ordered = successful[::-1]
+    fig, axes = plt.subplots(1, 3, figsize=(15, 6))
+    for ax, metric, label, colour in [
+        (axes[0], "auroc", "CV AUROC", "#4c78a8"),
+        (axes[1], "auprc", "CV AUPRC", "#59a14f"),
+        (axes[2], "f1", "CV F1", "#f28e2b"),
+    ]:
+        ax.barh(
+            [row["model"] for row in ordered],
+            [row[f"mean_{metric}"] for row in ordered],
+            xerr=[row[f"sd_{metric}"] for row in ordered],
+            color=colour,
+            alpha=0.9,
+            capsize=2,
+        )
+        ax.set_xlabel(f"{label} (mean +/- SD)")
+        ax.set_title(label)
+    fig.suptitle("Training-only cross-validated model comparison", fontweight="bold")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "model_comparison_auroc.png", dpi=220)
     fig.savefig(FIG_DIR / "Fig8_methods.png", dpi=220)
     plt.close(fig)
 
-    latex_df = pd.DataFrame(rows)[
-        ["rank_by_auroc", "model", "model_comparison_protocol", "test_auroc", "test_auprc", "f1", "brier", "elapsed_s"]
+    latex_df = pd.DataFrame(successful)[
+        [
+            "rank_by_mean_auroc",
+            "model",
+            "mean_auroc",
+            "sd_auroc",
+            "mean_auprc",
+            "mean_f1",
+            "mean_brier",
+            "mean_elapsed_s",
+        ]
     ].copy()
-    latex_df.columns = ["Rank", "Method", "Protocol", "Test AUROC", "AUPRC", "F1", "Brier", "Time (s)"]
+    latex_df.columns = ["Rank", "Method", "CV AUROC", "SD", "AUPRC", "F1", "Brier", "Time/fold (s)"]
     write_latex_tabular(
         LATEX_TABLE_DIR / "table_method_comparison.tex",
         latex_df,
         (
-            "Systematic comparison of machine-learning methods. Wall-clock "
-            "times use the environment recorded in compute_environment.csv."
+            "Training-only cross-validated comparison of machine-learning methods. "
+            "Wall-clock times use the environment recorded in compute_environment.csv."
         ),
         "tab:method_comparison_recomputed",
+    )
+    paired_rows: List[Dict[str, Any]] = []
+    primary_fold = per_fold_df[per_fold_df["model"] == PRIMARY_MODEL_NAME].sort_values(
+        ["repeat_index", "fold_index"]
+    )
+    for name in factories:
+        comparison_fold = per_fold_df[per_fold_df["model"] == name].sort_values(
+            ["repeat_index", "fold_index"]
+        )
+        for metric in ("auroc", "auprc", "f1", "brier"):
+            differences = (
+                primary_fold[metric].to_numpy(dtype=float)
+                - comparison_fold[metric].to_numpy(dtype=float)
+            )
+            sd = float(np.std(differences, ddof=1)) if len(differences) > 1 else 0.0
+            margin = 1.96 * sd / math.sqrt(len(differences)) if differences.size else float("nan")
+            mean_difference = float(np.mean(differences)) if differences.size else float("nan")
+            paired_rows.append(
+                {
+                    "primary_model": PRIMARY_MODEL_NAME,
+                    "comparison_model": name,
+                    "metric": metric,
+                    "n_paired_folds": len(differences),
+                    "mean_primary_minus_comparison": mean_difference,
+                    "sd_difference": sd,
+                    "descriptive_95pct_lower": mean_difference - margin,
+                    "descriptive_95pct_upper": mean_difference + margin,
+                    "note": "Descriptive paired interval; no significance claim.",
+                }
+            )
+    save_table(TABLE_DIR / "model_comparison_paired_differences.csv", paired_rows)
+    save_json(
+        DATA_DIR / "model_comparison_manifest.json",
+        {
+            "protocol": MODEL_COMPARISON_PROTOCOL,
+            "outer_test_used": False,
+            "primary_model": PRIMARY_MODEL_NAME,
+            "observed_top_mean_auroc_model": successful[0]["model"],
+            "n_folds": len(folds),
+            "model_names": list(factories),
+            "fold_selected_go_sha256": [fold.selected_go_sha256 for fold in folds],
+            "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+        },
     )
     return rows
 
@@ -3145,18 +3272,19 @@ def run_ablation(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> 
     X_train, y_train = context.X_train, context.y_train
     X_test, y_test = context.X_test, context.y_test
     ratio_label = f"1:{context.ratio}"
-    spw = scale_pos_weight_from_labels(y_train, "feature_ablation", {"ratio": ratio_label})
     rows = []
     for name, cols in feature_group_indices(bundle).items():
-        model = xgb_model(scale_pos_weight=spw, fast=fast)
+        model = primary_model(fast=fast, random_state=SEED)
         model.fit(X_train[:, cols], y_train)
         scores = predict_scores(model, X_test[:, cols])
         row = {
             "configuration": name,
+            "model": PRIMARY_MODEL_NAME,
             "primary_ratio": ratio_label,
             "d": len(cols),
             "feature_selection_protocol": PRIMARY_FIXED_GO_SELECTION_PROTOCOL,
-            "scale_pos_weight": spw,
+            "scale_pos_weight": float("nan"),
+            "class_weight": "balanced",
         }
         row.update(metrics_from_scores(y_test, scores))
         rows.append(row)
@@ -3185,6 +3313,31 @@ def run_ablation(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> 
     return rows
 
 
+def positive_class_shap_values(values: Any, n_features: int) -> np.ndarray:
+    """Normalize SHAP output variants to samples by features for class 1.
+
+    SHAP versions return binary-tree explanations as a list of class arrays,
+    a samples-by-features array, or a 3-D array with a class axis. Keeping the
+    conversion explicit prevents class 0 and class 1 attributions from being
+    averaged together accidentally.
+    """
+    if hasattr(values, "values"):
+        values = values.values
+    if isinstance(values, list):
+        values = values[-1]
+    array = np.asarray(values)
+    if array.ndim == 3:
+        if array.shape[-1] == 2:
+            array = array[:, :, 1]
+        elif array.shape[0] == 2:
+            array = array[1]
+    if array.ndim != 2 or array.shape[1] != n_features:
+        raise ValueError(
+            f"Unexpected SHAP shape {array.shape}; expected samples x {n_features}."
+        )
+    return np.asarray(array, dtype=float)
+
+
 def run_importance(
     bundle: DatasetBundle,
     context: PrimaryContext,
@@ -3194,17 +3347,16 @@ def run_importance(
     """Compute feature importance via SHAP (preferred) or model importances (fallback).
 
     Uses TreeExplainer on up to 300 test samples; if SHAP is unavailable,
-    falls back to XGBoost's built-in feature_importances_.
+    falls back to the fitted Random Forest feature importances.
     Produces table_top_features.csv and Fig3_shap.png.
     """
     if shap is not None:
         try:
             explainer = shap.TreeExplainer(model)
             vals = explainer.shap_values(X_test[: min(300, len(X_test))])
-            if isinstance(vals, list):
-                vals = vals[-1]
+            vals = positive_class_shap_values(vals, len(bundle.feature_names))
             importance = np.mean(np.abs(vals), axis=0)
-            method = "shap_mean_abs"
+            method = "shap_mean_abs_positive_class"
         except Exception:
             importance = getattr(model, "feature_importances_", np.zeros(len(bundle.feature_names)))
             method = "model_feature_importance_fallback"
@@ -3217,6 +3369,7 @@ def run_importance(
             "feature": bundle.feature_names[idx],
             "importance": float(importance[idx]),
             "method": method,
+            "model": PRIMARY_MODEL_NAME,
             "primary_ratio": f"1:{context.ratio}",
         }
         for i, idx in enumerate(np.argsort(importance)[::-1][:30])
@@ -3536,7 +3689,7 @@ def random_forest_hyperparameters(fast: bool) -> Dict[str, Any]:
         "max_features": "sqrt",
         "class_weight": "balanced",
         "random_state": SEED,
-        "n_jobs": -1,
+        "n_jobs": 1,
     }
 
 
@@ -3606,6 +3759,7 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
             rows.append(
                 {
                     "model": model,
+                    "model_role": "primary" if model == PRIMARY_MODEL_NAME else "comparison",
                     "parameter": parameter,
                     "paper_full_value": paper.get(parameter),
                     "quick_debug_value": quick.get(parameter),
@@ -3618,6 +3772,7 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
         rows.append(
             {
                 "model": model,
+                "model_role": "comparison",
                 "parameter": "availability",
                 "paper_full_value": "optional_dependency",
                 "quick_debug_value": "optional_dependency",
@@ -3631,7 +3786,7 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
 
 def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> List[Dict[str, Any]]:
     """Record the actual validation protocol used by each analysis section."""
-    full_sections = ["main", "ratio", "models", "ablation", "importance"]
+    full_sections = ["main", "ratio", "go-count", "models", "ablation", "importance"]
     section_set = set(full_sections if "all" in sections else sections)
     cv_splits = 3 if args.quick else 5
     cv_repeats = 1 if args.quick else 3
@@ -3640,6 +3795,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         rows.append(
             {
                 "analysis_name": "seed42_reference_run",
+                "model": PRIMARY_MODEL_NAME,
                 "run_mode": run_mode_from_args(args),
                 "model_comparison_protocol": "",
                 "n_splits": cv_splits,
@@ -3655,6 +3811,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         rows.append(
             {
                 "analysis_name": "negative_ratio_sensitivity",
+                "model": PRIMARY_MODEL_NAME,
                 "run_mode": run_mode_from_args(args),
                 "model_comparison_protocol": "",
                 "n_splits": cv_splits,
@@ -3670,6 +3827,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         rows.append(
             {
                 "analysis_name": "go_feature_count_sensitivity",
+                "model": PRIMARY_MODEL_NAME,
                 "run_mode": run_mode_from_args(args),
                 "model_comparison_protocol": "",
                 "n_splits": cv_splits,
@@ -3685,14 +3843,15 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         rows.append(
             {
                 "analysis_name": "supplementary_model_comparison",
+                "model": "13-model catalogue",
                 "run_mode": run_mode_from_args(args),
                 "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
-                "n_splits": "",
-                "n_repeats": "",
-                "total_folds": "",
-                "random_state": SEED,
-                "metric_reported": "held-out AUROC/AUPRC/F1/precision/recall only",
-                "error_term_type": "NA",
+                "n_splits": cv_splits,
+                "n_repeats": cv_repeats,
+                "total_folds": cv_splits * cv_repeats,
+                "random_state": "42" if args.quick else "42;7;13",
+                "metric_reported": "outer-training-only CV AUROC/AUPRC/F1/precision/recall/Brier",
+                "error_term_type": "SD",
                 "output_table": "tables/model_comparison.csv",
             }
         )
@@ -3700,6 +3859,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         rows.append(
             {
                 "analysis_name": "feature_ablation",
+                "model": PRIMARY_MODEL_NAME,
                 "run_mode": run_mode_from_args(args),
                 "model_comparison_protocol": "",
                 "n_splits": "",
@@ -3715,6 +3875,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         rows.append(
             {
                 "analysis_name": "feature_importance",
+                "model": PRIMARY_MODEL_NAME,
                 "run_mode": run_mode_from_args(args),
                 "model_comparison_protocol": "",
                 "n_splits": "",
@@ -3732,6 +3893,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
             "seed42_reference_run",
             "negative_ratio_sensitivity",
             "go_feature_count_sensitivity",
+            "supplementary_model_comparison",
         }:
             row["feature_selection_protocol"] = f"{NESTED_GO_SELECTION_PROTOCOL}_for_cv"
             row["nested_feature_selection"] = True
@@ -3774,6 +3936,7 @@ def save_result_summary(
     annotated_pathway_genes = pathway_member_genes & set(bundle.gene_go)
     summary = {
         "dataset_source": bundle.source,
+        "primary_model": PRIMARY_MODEL_NAME,
         "primary_ratio": f"1:{context.ratio}",
         "positive_fraction_train": float(np.mean(context.y_train == 1)),
         "positive_fraction_test": float(np.mean(context.y_test == 1)),
@@ -3870,7 +4033,10 @@ def save_manifest(
             and not is_paper_result
         ),
         "formal_full_run": not bool(args.quick),
+        "paper_text_synchronized": False,
         "comparison_run": context.ratio != DEFAULT_PRIMARY_RATIO,
+        "primary_model": PRIMARY_MODEL_NAME,
+        "primary_model_slug": PRIMARY_MODEL_SLUG,
         "primary_ratio": f"1:{context.ratio}",
         "dataset_source": bundle.source,
         "dataset_mode": dataset_mode_from_args(args),
@@ -3883,6 +4049,7 @@ def save_manifest(
             "heldout_models": "outer_train_only",
             "ratio_cv": "fold_train_only_for_variance_and_mutual_information",
             "go_feature_count_cv": "fold_train_only_for_variance_and_mutual_information",
+            "model_comparison_cv": "fold_train_only_for_variance_and_mutual_information",
             "frequency_prefilter": "label_free_full_go_background",
         },
         "jaccard_feature_protocol": jaccard_feature_protocol(),
@@ -3901,6 +4068,7 @@ def save_manifest(
             "cv_repeat_seeds": list(CV_REPEAT_SEEDS if not args.quick else (SEED,)),
         },
         "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
+        "model_selection_outer_test_used": False,
         "scale_pos_weight_rule": SCALE_POS_WEIGHT_RULE,
         "scale_pos_weight_summary": scale_pos_weight_summary(spw_rows),
         "sections_run": list(sections),
@@ -3934,10 +4102,11 @@ def save_manifest(
             f"The {N_GO_TERMS} GO terms are selected only from the primary outer-training records.",
             "Ratio comparison repeats variance and mutual-information selection inside each fold training side.",
             "Source-derived negative controls are generated independently on each split side.",
-            "The supplementary 13-model comparison uses the common held-out split.",
+            f"{PRIMARY_MODEL_NAME} is the primary model for held-out evaluation and downstream analyses.",
+            "The 13-model comparison is confined to shared outer-training CV folds; it does not use the outer test set.",
         ],
         "paper_output_map": {
-            "heldout_reference_diagnostics": (
+            "heldout_primary_model_diagnostics": (
                 "tables/heldout_predictions.csv, tables/heldout_confusion_matrix.csv, "
                 "tables/heldout_score_by_type.csv, tables/heldout_negative_type_performance.csv, "
                 "figures/FigC_roc_pr.png, figures/FigF_confusion.png, and "
@@ -4178,6 +4347,8 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
 
     checklist = [
         "Paper items to synchronize only after candidate approval:",
+        "- Primary-model name, rationale, methods, and hyperparameters (Random Forest replaces XGBoost).",
+        "- Model comparison protocol (training-only repeated CV; outer test excluded from model selection).",
         "- Selected GO count, total feature dimension, and feature-selection wording.",
         "- Outer train/test sample counts and class prevalence.",
         "- Main benchmark, confusion matrix, score-by-negative-type, and model-comparison metrics.",
@@ -4233,7 +4404,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     sections = args.sections
     if "all" in sections:
-        sections = ["main", "ratio", "models", "ablation", "importance"]
+        sections = ["main", "ratio", "go-count", "models", "ablation", "importance"]
 
     main_result = None
     if any(s in sections for s in ("main", "importance")):
@@ -4259,8 +4430,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         gc.collect()
     if "importance" in sections and main_result is not None:
         print("Running SHAP/model-importance summary ...", flush=True)
-        xgb = main_result["models"]["XGBoost"]
-        run_importance(bundle, context, xgb, main_result["X_test"])
+        primary = main_result["models"][PRIMARY_MODEL_NAME]
+        run_importance(bundle, context, primary, main_result["X_test"])
         gc.collect()
 
     save_manifest(args, bundle, context, sections)
@@ -4277,7 +4448,7 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
     ensure_dirs()
     remove_obsolete_analysis_outputs()
     chunks = [
-        ["main", "ratio", "importance"],
+        ["main", "ratio", "go-count", "importance"],
         ["models"],
         ["ablation"],
     ]
@@ -4316,7 +4487,7 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
         args,
         bundle,
         context,
-        ["main", "ratio", "models", "ablation", "importance"],
+        ["main", "ratio", "go-count", "models", "ablation", "importance"],
     )
     save_old_vs_candidate_comparison(bundle, context)
     print(f"\nDone. Outputs written to {OUT_DIR}")
@@ -4415,7 +4586,11 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.full:
         args.quick = False
-    if "go-count" in args.sections and ("all" in args.sections or len(args.sections) != 1):
+    if (
+        "go-count" in args.sections
+        and ("all" in args.sections or len(args.sections) != 1)
+        and os.environ.get("PATHWAYML_CHILD") != "1"
+    ):
         parser.error("Run --sections go-count separately so its outputs remain supplementary.")
     if "go-count" in args.sections:
         suffix = "_quick" if args.quick else ""

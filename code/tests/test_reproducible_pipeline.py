@@ -71,6 +71,7 @@ class ReproduciblePipelineTests(unittest.TestCase):
             self.assertFalse(retired_keys & set(record))
 
     def test_training_selection_has_fixed_dimension(self) -> None:
+        self.assertEqual(pipeline.PRIMARY_MODEL_NAME, "Random Forest")
         self.assertEqual(len(self.context.selected_go), pipeline.N_GO_TERMS)
         self.assertEqual(len(self.context.feature_names), pipeline.N_TOTAL_FEATURES)
         self.assertEqual(self.context.feature_selection_stages["mi_select"], pipeline.N_GO_TERMS)
@@ -237,24 +238,40 @@ class ReproduciblePipelineTests(unittest.TestCase):
         )
         self.assertTrue(np.array_equal(forward, reverse))
 
-    def test_xgboost_fold_predictions_are_deterministic(self) -> None:
+    def test_random_forest_fold_predictions_are_deterministic(self) -> None:
         fold = pipeline.build_cv_fold_datasets(
             self.bundle,
             self.context,
             ratio=1,
             fast=True,
-            analysis_name="test_xgb_determinism",
+            analysis_name="test_rf_determinism",
         )[0]
         predictions = []
         for _ in range(2):
-            model = pipeline.xgb_model(
-                scale_pos_weight=fold.scale_pos_weight,
-                fast=True,
-                random_state=fold.model_seed,
-            )
+            model = pipeline.primary_model(fast=True, random_state=fold.model_seed)
             model.fit(fold.X_train, fold.y_train)
             predictions.append(pipeline.predict_scores(model, fold.X_validation))
         self.assertTrue(np.array_equal(predictions[0], predictions[1]))
+
+    def test_model_comparison_catalog_includes_primary_model(self) -> None:
+        factories = pipeline.model_factory_catalog(fast=True)
+        self.assertIn(pipeline.PRIMARY_MODEL_NAME, factories)
+        expected_count = 11 + int(pipeline.lgb is not None) + int(pipeline.cb is not None)
+        self.assertEqual(len(factories), expected_count)
+        model = factories[pipeline.PRIMARY_MODEL_NAME](1.0, pipeline.SEED)
+        self.assertEqual(model.n_estimators, 120)
+        self.assertEqual(model.max_depth, 10)
+        self.assertEqual(model.class_weight, "balanced")
+
+    def test_positive_class_shap_shape_normalization(self) -> None:
+        class_zero = np.zeros((4, 3), dtype=float)
+        class_one = np.arange(12, dtype=float).reshape(4, 3)
+        from_list = pipeline.positive_class_shap_values([class_zero, class_one], 3)
+        from_last_axis = pipeline.positive_class_shap_values(
+            np.stack([class_zero, class_one], axis=-1), 3
+        )
+        self.assertTrue(np.array_equal(from_list, class_one))
+        self.assertTrue(np.array_equal(from_last_axis, class_one))
 
     def test_heldout_diagnostics_use_supplied_scores(self) -> None:
         records = [

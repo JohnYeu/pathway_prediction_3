@@ -20,12 +20,14 @@ The pipeline regenerates the main intermediate products under `generated/`:
   `tables/heldout_negative_type_performance.csv`
 - training-only nested ratio comparison: `tables/ratio_cv_per_fold.csv` and
   `tables/ratio_cv_summary.csv`
-- 13-method comparison: `tables/model_comparison.csv`
+- training-only 13-method comparison: `tables/model_comparison.csv` and
+  `tables/model_comparison_per_fold.csv`
 - ablation study: `tables/ablation.csv`
 - feature importance: `tables/feature_importance.csv`
 - split, negative-source, GO-selection, and CV audits under `tables/` and `data/`
 
-It also creates the scientific figures used by the current manuscript:
+It also creates the analysis figures that can be synchronized with the manuscript
+after a completed full run has been reviewed:
 
 - `generated/figures/Fig3_shap.png`
 - `generated/figures/Fig5_datastats.png`
@@ -87,11 +89,12 @@ label-free background frequency filter
 -> top 80 GO terms
 ```
 
-Held-out reference models and supplementary classifiers use the same 80 terms
-selected from the complete outer-training side. Ratio comparison is performed
-only inside outer training. Each ratio/fold independently generates controls
-and repeats variance and mutual-information selection on fold training. The
-outer test set is evaluated only for the preselected 1:1 candidate.
+Random Forest is the primary model. It uses the 80 terms selected from the
+complete outer-training side for one final held-out evaluation. Model-family
+comparison and ratio comparison are performed only inside outer training. Each
+fold independently generates controls and repeats variance and mutual-information
+selection on fold training. The outer test set is not used to choose a model or
+class ratio.
 
 An optional cached-data mode is available for comparison with archived inputs:
 
@@ -117,7 +120,7 @@ cannot overwrite the paper results.
 
 ## Ratio Comparison
 
-The `ratio` section compares 1:1 through 1:5 only within outer training by
+The `ratio` section compares Random Forest at 1:1 through 1:5 only within outer training by
 three-repeat, five-fold cross-validation in full mode. Each fold selects its own
 80 GO terms. The table reports raw AUPRC, its random prevalence baseline, and
 normalized AUPRC. The normalization is useful for context but does not make PR
