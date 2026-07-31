@@ -117,8 +117,8 @@ class ReproduciblePipelineTests(unittest.TestCase):
 
     def test_go_feature_count_candidates_share_one_fold_ranking(self) -> None:
         self.assertEqual(pipeline.GO_FEATURE_COUNT_CANDIDATES, (20, 40, 60, 80, 100))
-        self.assertEqual(pipeline.N_GO_TERMS, 80)
-        self.assertEqual(pipeline.N_TOTAL_FEATURES, 89)
+        self.assertEqual(pipeline.N_GO_TERMS, 60)
+        self.assertEqual(pipeline.N_TOTAL_FEATURES, 69)
         folds = pipeline.build_cv_fold_datasets(
             self.bundle,
             self.context,
@@ -263,6 +263,44 @@ class ReproduciblePipelineTests(unittest.TestCase):
         self.assertEqual(model.n_estimators, 120)
         self.assertEqual(model.max_depth, 10)
         self.assertEqual(model.class_weight, "balanced")
+
+    def test_frozen_selection_configuration_matches_formal_outputs(self) -> None:
+        config_path = pipeline.ROOT / "generated" / "data" / pipeline.SELECTION_CONFIG_NAME
+        self.assertTrue(config_path.exists())
+        args = type(
+            "Args",
+            (),
+            {"primary_ratio": pipeline.DEFAULT_PRIMARY_RATIO, "quick": False},
+        )()
+        config = pipeline.validate_frozen_selection_configuration(config_path, args)
+        self.assertEqual(config["selection_stage_order"], ["ratio", "models", "go-count"])
+        self.assertFalse(config["outer_test_used_for_selection"])
+
+    def test_ratio_models_share_fold_samples_and_features(self) -> None:
+        folds = pipeline.build_cv_fold_datasets(
+            self.bundle,
+            self.context,
+            ratio=1,
+            fast=True,
+            analysis_name="test_ratio_model_comparison",
+        )
+        rows = pipeline.evaluate_ratio_folds(folds[:1], fast=True)
+        self.assertEqual(
+            {row["model"] for row in rows},
+            set(pipeline.RATIO_COMPARISON_MODELS),
+        )
+        self.assertEqual(len(rows), len(pipeline.RATIO_COMPARISON_MODELS))
+        for key in [
+            "train_records_sha256",
+            "validation_records_sha256",
+            "selected_go_sha256",
+            "train_negative_seed",
+            "validation_negative_seed",
+            "feature_selection_seed",
+        ]:
+            self.assertEqual(len({row[key] for row in rows}), 1)
+        xgboost_row = next(row for row in rows if row["model"] == "XGBoost")
+        self.assertEqual(xgboost_row["scale_pos_weight"], folds[0].scale_pos_weight)
 
     def test_internal_child_accepts_formal_output_directory(self) -> None:
         original_argv = sys.argv

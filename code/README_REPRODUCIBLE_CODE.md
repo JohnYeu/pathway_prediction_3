@@ -18,8 +18,8 @@ The pipeline regenerates the main intermediate products under `generated/`:
   `tables/heldout_predictions.csv`, `tables/heldout_confusion_matrix.csv`,
   `tables/heldout_score_by_type.csv`, and
   `tables/heldout_negative_type_performance.csv`
-- training-only nested ratio comparison: `tables/ratio_cv_per_fold.csv` and
-  `tables/ratio_cv_summary.csv`
+- training-only nested ratio comparison: `tables/ratio_cv_per_fold.csv`,
+  `tables/ratio_cv_summary.csv`, and `tables/ratio_cv_consensus_summary.csv`
 - training-only 13-method comparison: `tables/model_comparison.csv` and
   `tables/model_comparison_per_fold.csv`
 - ablation study: `tables/ablation.csv`
@@ -69,6 +69,12 @@ tables, and the PMN/AraCyc pathway dump.  Duplicate TAIR gene-GO pairs are
 collapsed before feature construction because ATH_GO_GOSLIM expands GO
 annotations across GO slim categories.
 
+For `--sections all`, the formal run has two stages. It first runs the
+training-only ratio, model, and GO feature-count comparisons. Their choices and
+file hashes are saved in `generated/data/frozen_selection_config.json`. The main
+held-out benchmark, ablation, and SHAP analyses run only after that configuration
+has been validated.
+
 ## Evaluation Protocol
 
 The 538 KEGG/AraCyc source records are retained as provenance. Records with
@@ -80,21 +86,22 @@ generated. KEGG/AraCyc proportions are preserved with a fixed seed-42 split.
 Training controls are derived only from training pathways, and test controls
 are derived only from test pathways.
 
-The 80 GO-frequency terms are selected once using the primary training records:
+The 60 GO-frequency terms are selected once using the primary training records:
 
 ```text
 label-free background frequency filter
 -> variance filter on primary training records
 -> mutual-information ranking on primary training labels
--> top 80 GO terms
+-> top 60 GO terms
 ```
 
-Random Forest is the primary model. It uses the 80 terms selected from the
+Random Forest is the primary model. It uses the 60 terms selected from the
 complete outer-training side for one final held-out evaluation. Model-family
-comparison and ratio comparison are performed only inside outer training. Each
-fold independently generates controls and repeats variance and mutual-information
-selection on fold training. The outer test set is not used to choose a model or
-class ratio.
+comparison and ratio comparison are performed only inside outer training. The
+ratio comparison uses Logistic Regression, Random Forest, and XGBoost on the
+same folds, negative samples, and fold-selected GO terms. Each fold independently
+generates controls and repeats variance and mutual-information selection on fold
+training. The outer test set is not used to choose a model or class ratio.
 
 An optional cached-data mode is available for comparison with archived inputs:
 
@@ -120,12 +127,16 @@ cannot overwrite the paper results.
 
 ## Ratio Comparison
 
-The `ratio` section compares Random Forest at 1:1 through 1:5 only within outer training by
-three-repeat, five-fold cross-validation in full mode. Each fold selects its own
-80 GO terms. The table reports raw AUPRC, its random prevalence baseline, and
-normalized AUPRC. The normalization is useful for context but does not make PR
-performance completely independent of prevalence. The code records 1:1 as the
-preselected candidate and does not select a winner automatically.
+The `ratio` section compares Logistic Regression, Random Forest, and XGBoost at
+1:1 through 1:5 only within outer training by three-repeat, five-fold
+cross-validation in full mode. Each ratio's folds, negative samples, and
+fold-selected 60 GO terms are shared across the three classifiers. The detailed
+table reports raw AUPRC, its random prevalence baseline, normalized AUPRC, F1,
+and the other diagnostic metrics for each model. A second table gives descriptive
+means across the three models; it is not a fitted ensemble. The normalization is
+useful for context but does not make PR performance completely independent of
+prevalence. The code records 1:1 as the preselected candidate and does not select
+a winner automatically.
 
 ## Reproducibility Inputs
 

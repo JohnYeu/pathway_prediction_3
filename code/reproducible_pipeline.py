@@ -16,13 +16,14 @@ The pipeline:
 
 1. rebuilds pathways and GO annotations from raw KEGG, AraCyc, and TAIR files;
 2. splits positive pathways before generating split-specific controls;
-3. selects 80 GO terms from the primary training records and constructs an
-   89-dimensional representation;
+3. selects 60 GO terms from the primary training records and constructs a
+   69-dimensional representation;
 4. regenerates the four control classes used by this analysis
    (random[5,30], shuffled, partial, cross-pathway);
-5. runs the main benchmark, ratio sensitivity, model comparison, ablation,
-   and SHAP/importance summary;
-6. saves machine-readable tables, figures, and provenance under an isolated
+5. runs training-only ratio, model, and GO-count comparisons, then freezes the
+   retained configuration before the final held-out and downstream analyses;
+6. runs the main benchmark, ablation, and SHAP/importance summary;
+7. saves machine-readable tables, figures, and provenance under an isolated
    result directory.
 
 Raw mode is the default.  A cached mode is retained only for comparison with an
@@ -130,7 +131,7 @@ SEED = 42
 # pathway.  Other ratios remain available as isolated sensitivity branches.
 DEFAULT_PRIMARY_RATIO = 1
 SUPPORTED_PRIMARY_RATIOS = (1, 2, 3, 4, 5)
-N_GO_TERMS = 80
+N_GO_TERMS = 60
 N_ENGINEERED_FEATURES = 9
 N_TOTAL_FEATURES = N_GO_TERMS + N_ENGINEERED_FEATURES
 GO_FEATURE_COUNT_CANDIDATES = (20, 40, 60, 80, 100)
@@ -149,6 +150,16 @@ SCALE_POS_WEIGHT_LOG: List[Dict[str, Any]] = []
 PRIMARY_MODEL_NAME = "Random Forest"
 PRIMARY_MODEL_SLUG = "random_forest"
 MODEL_COMPARISON_PROTOCOL = "outer_training_repeated_stratified_cv"
+RATIO_COMPARISON_MODELS = (
+    "Logistic Regression",
+    "Random Forest",
+    "XGBoost",
+)
+RATIO_COMPARISON_PROTOCOL = "shared_nested_cv_folds_across_representative_classifiers"
+SELECTION_CONFIG_NAME = "frozen_selection_config.json"
+SELECTION_CONFIG_ENV = "PATHWAYML_SELECTION_CONFIG"
+SELECTION_STAGE_SECTIONS = ("ratio", "models", "go-count")
+FINAL_STAGE_SECTIONS = ("main", "ablation", "importance")
 
 # Pairwise Jaccard uses every annotated gene for small and medium gene sets.
 # Larger sets use a deterministic local sample so feature construction remains
@@ -439,6 +450,137 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def freeze_selection_configuration(args: argparse.Namespace) -> Path:
+    """Freeze training-only choices before the final held-out stage.
+
+    The ratio, model, and GO-count analyses write their evidence first.  This
+    function checks that the reported primary configuration is supported by
+    those outputs, then records the choices and input hashes for the final
+    stage.  The outer-test analysis is not read here.
+    """
+    ratio_path = TABLE_DIR / "ratio_cv_consensus_summary.csv"
+    model_path = TABLE_DIR / "model_comparison.csv"
+    go_count_path = TABLE_DIR / "go_feature_count_cv_summary.csv"
+    required = (ratio_path, model_path, go_count_path)
+    missing = [project_relative_path(path) for path in required if not path.exists()]
+    if missing:
+        raise FileNotFoundError(
+            "Cannot freeze the selection configuration; missing training-only outputs: "
+            + ", ".join(missing)
+        )
+
+    ratio_df = pd.read_csv(ratio_path)
+    model_df = pd.read_csv(model_path)
+    go_count_df = pd.read_csv(go_count_path)
+
+    ratio_by_auprc = int(ratio_df.loc[ratio_df["mean_normalized_auprc"].idxmax(), "ratio_value"])
+    ratio_by_f1 = int(ratio_df.loc[ratio_df["mean_f1"].idxmax(), "ratio_value"])
+    eligible_models = model_df[model_df["status"] == "ok"].copy()
+    if eligible_models.empty:
+        raise ValueError("The training-only model comparison contains no successful model rows.")
+    best_model_row = eligible_models.sort_values(
+        ["mean_auroc", "sd_auroc"], ascending=[False, True]
+    ).iloc[0]
+    best_model = str(best_model_row["model"])
+
+    reference_rows = go_count_df[go_count_df["n_go_terms"] == N_GO_TERMS]
+    if len(reference_rows) != 1:
+        raise ValueError(f"Expected one GO-count row for the {N_GO_TERMS}-term setting.")
+    reference_row = reference_rows.iloc[0]
+    larger_rows = go_count_df[go_count_df["n_go_terms"] > N_GO_TERMS]
+    largest_additional_auroc = (
+        float((larger_rows["mean_auroc"] - float(reference_row["mean_auroc"])).max())
+        if not larger_rows.empty
+        else 0.0
+    )
+
+    supports_ratio = ratio_by_auprc == args.primary_ratio and ratio_by_f1 == args.primary_ratio
+    supports_model = best_model == PRIMARY_MODEL_NAME
+    supports_compact_go_count = largest_additional_auroc <= 0.001
+    if not args.quick:
+        if not supports_ratio:
+            raise ValueError(
+                "The frozen primary ratio is not supported by both normalized AUPRC and F1."
+            )
+        if not supports_model:
+            raise ValueError(
+                f"The training-only comparison ranks {best_model}, not {PRIMARY_MODEL_NAME}, first."
+            )
+        if not supports_compact_go_count:
+            raise ValueError(
+                "A larger GO representation improves mean AUROC by more than the "
+                "0.001 plateau tolerance; review the retained feature count."
+            )
+
+    evidence_files = {
+        project_relative_path(path): sha256_file(path)
+        for path in required
+    }
+    payload = {
+        "schema_version": 1,
+        "status": "frozen_before_final_stage",
+        "run_mode": run_mode_from_args(args),
+        "selection_stage_order": list(SELECTION_STAGE_SECTIONS),
+        "final_stage_order": list(FINAL_STAGE_SECTIONS),
+        "outer_test_used_for_selection": False,
+        "frozen_configuration": {
+            "primary_ratio": f"1:{args.primary_ratio}",
+            "primary_model": PRIMARY_MODEL_NAME,
+            "n_go_terms": N_GO_TERMS,
+            "n_total_features": N_TOTAL_FEATURES,
+        },
+        "training_only_evidence": {
+            "ratio": {
+                "best_mean_normalized_auprc_ratio": f"1:{ratio_by_auprc}",
+                "best_mean_f1_ratio": f"1:{ratio_by_f1}",
+                "supports_frozen_ratio": supports_ratio,
+            },
+            "model": {
+                "highest_mean_auroc_model": best_model,
+                "mean_auroc": float(best_model_row["mean_auroc"]),
+                "sd_auroc": float(best_model_row["sd_auroc"]),
+                "supports_frozen_model": supports_model,
+            },
+            "go_feature_count": {
+                "retained_count": N_GO_TERMS,
+                "retained_mean_auroc": float(reference_row["mean_auroc"]),
+                "largest_additional_auroc_from_larger_counts": largest_additional_auroc,
+                "plateau_tolerance": 0.001,
+                "supports_compact_retained_count": supports_compact_go_count,
+            },
+        },
+        "evidence_file_sha256": evidence_files,
+    }
+    path = DATA_DIR / SELECTION_CONFIG_NAME
+    save_json(path, payload)
+    return path
+
+
+def validate_frozen_selection_configuration(
+    path: Path,
+    args: argparse.Namespace,
+) -> Dict[str, Any]:
+    """Validate the frozen selection record before final analyses run."""
+    if not path.exists():
+        raise FileNotFoundError(f"Frozen selection configuration not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    expected = {
+        "primary_ratio": f"1:{args.primary_ratio}",
+        "primary_model": PRIMARY_MODEL_NAME,
+        "n_go_terms": N_GO_TERMS,
+        "n_total_features": N_TOTAL_FEATURES,
+    }
+    if payload.get("frozen_configuration") != expected:
+        raise ValueError("Frozen selection configuration does not match the requested final run.")
+    if payload.get("status") != "frozen_before_final_stage":
+        raise ValueError("Selection configuration is not marked as frozen.")
+    for relative_path, expected_hash in payload.get("evidence_file_sha256", {}).items():
+        evidence_path = ROOT.parent / relative_path if relative_path.startswith("code/") else ROOT / relative_path
+        if not evidence_path.exists() or sha256_file(evidence_path) != expected_hash:
+            raise ValueError(f"Selection evidence changed after freezing: {relative_path}")
+    return payload
 
 
 def parse_sha256sums(path: Path) -> Dict[str, str]:
@@ -2316,53 +2458,67 @@ def normalized_auprc(raw_auprc: float, positive_prevalence: float) -> float:
     return float((raw_auprc - positive_prevalence) / (1.0 - positive_prevalence))
 
 
+def ratio_model_factory_catalog(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
+    """Return the three representative classifiers used for ratio sensitivity."""
+    catalogue = model_factory_catalog(fast=fast)
+    return {name: catalogue[name] for name in RATIO_COMPARISON_MODELS}
+
+
 def evaluate_ratio_folds(folds: Sequence[CVFoldData], fast: bool) -> List[Dict[str, Any]]:
-    """Fit one primary Random Forest per nested fold and return metrics."""
+    """Evaluate representative classifiers on exactly the same nested folds."""
     rows: List[Dict[str, Any]] = []
-    for fold in folds:
-        model = primary_model(fast=fast, random_state=fold.model_seed)
-        started = time.time()
-        model.fit(fold.X_train, fold.y_train)
-        scores = predict_scores(model, fold.X_validation)
-        metrics = metrics_from_scores(fold.y_validation, scores)
-        prevalence = float(np.mean(fold.y_validation == 1))
-        rows.append(
-            {
-                "ratio": f"1:{fold.ratio}",
-                "model": PRIMARY_MODEL_NAME,
-                "ratio_value": fold.ratio,
-                "repeat_index": fold.repeat_index,
-                "repeat_seed": fold.repeat_seed,
-                "fold_index": fold.fold_index,
-                "n_train_positive": int((fold.y_train == 1).sum()),
-                "n_train_negative": int((fold.y_train == 0).sum()),
-                "n_validation_positive": int((fold.y_validation == 1).sum()),
-                "n_validation_negative": int((fold.y_validation == 0).sum()),
-                "positive_prevalence": prevalence,
-                "random_auprc_baseline": prevalence,
-                "auroc": metrics["test_auroc"],
-                "raw_auprc": metrics["test_auprc"],
-                "normalized_auprc": normalized_auprc(metrics["test_auprc"], prevalence),
-                "f1": metrics["f1"],
-                "precision": metrics["precision"],
-                "recall": metrics["recall"],
-                "brier": metrics["brier"],
-                "scale_pos_weight": float("nan"),
-                "class_weight": "balanced",
-                "train_negative_seed": fold.train_negative_seed,
-                "validation_negative_seed": fold.validation_negative_seed,
-                "feature_selection_seed": fold.feature_selection_seed,
-                "model_seed": fold.model_seed,
-                "selected_go_sha256": fold.selected_go_sha256,
-                "train_records_sha256": stable_json_sha256(
-                    [(record["id"], record["genes"]) for record in fold.train_records]
-                ),
-                "validation_records_sha256": stable_json_sha256(
-                    [(record["id"], record["genes"]) for record in fold.validation_records]
-                ),
-                "elapsed_s": time.time() - started,
-            }
-        )
+    factories = ratio_model_factory_catalog(fast=fast)
+    for model_name, factory in factories.items():
+        for fold in folds:
+            model = factory(fold.scale_pos_weight, fold.model_seed)
+            started = time.time()
+            model.fit(fold.X_train, fold.y_train)
+            scores = predict_scores(model, fold.X_validation)
+            metrics = metrics_from_scores(fold.y_validation, scores)
+            prevalence = float(np.mean(fold.y_validation == 1))
+            rows.append(
+                {
+                    "ratio": f"1:{fold.ratio}",
+                    "model": model_name,
+                    "ratio_value": fold.ratio,
+                    "repeat_index": fold.repeat_index,
+                    "repeat_seed": fold.repeat_seed,
+                    "fold_index": fold.fold_index,
+                    "n_train_positive": int((fold.y_train == 1).sum()),
+                    "n_train_negative": int((fold.y_train == 0).sum()),
+                    "n_validation_positive": int((fold.y_validation == 1).sum()),
+                    "n_validation_negative": int((fold.y_validation == 0).sum()),
+                    "positive_prevalence": prevalence,
+                    "random_auprc_baseline": prevalence,
+                    "auroc": metrics["test_auroc"],
+                    "raw_auprc": metrics["test_auprc"],
+                    "normalized_auprc": normalized_auprc(metrics["test_auprc"], prevalence),
+                    "f1": metrics["f1"],
+                    "precision": metrics["precision"],
+                    "recall": metrics["recall"],
+                    "brier": metrics["brier"],
+                    "scale_pos_weight": (
+                        fold.scale_pos_weight if model_name == "XGBoost" else float("nan")
+                    ),
+                    "class_weight": (
+                        "balanced"
+                        if model_name in {"Logistic Regression", "Random Forest"}
+                        else ""
+                    ),
+                    "train_negative_seed": fold.train_negative_seed,
+                    "validation_negative_seed": fold.validation_negative_seed,
+                    "feature_selection_seed": fold.feature_selection_seed,
+                    "model_seed": fold.model_seed,
+                    "selected_go_sha256": fold.selected_go_sha256,
+                    "train_records_sha256": stable_json_sha256(
+                        [(record["id"], record["genes"]) for record in fold.train_records]
+                    ),
+                    "validation_records_sha256": stable_json_sha256(
+                        [(record["id"], record["genes"]) for record in fold.validation_records]
+                    ),
+                    "elapsed_s": time.time() - started,
+                }
+            )
     return rows
 
 
@@ -2392,13 +2548,15 @@ def selected_go_stability_rows(folds: Sequence[CVFoldData]) -> List[Dict[str, An
 
 
 def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> List[Dict[str, Any]]:
-    """Compare class ratios only within outer training by nested repeated CV."""
+    """Compare class ratios across three model families within outer training."""
     per_fold_rows: List[Dict[str, Any]] = []
     stability_rows: List[Dict[str, Any]] = []
     manifest_folds: List[Dict[str, Any]] = []
     outer_test_ids = {str(record["id"]) for record in context.test_positive_records}
 
     for ratio in SUPPORTED_PRIMARY_RATIOS:
+        # Build each ratio's samples and fold-specific GO representation once.
+        # All three classifiers then use the same matrices and audit hashes.
         folds = build_cv_fold_datasets(
             bundle,
             context,
@@ -2438,37 +2596,74 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
     per_fold_df = pd.DataFrame(per_fold_rows)
     metric_columns = ["auroc", "raw_auprc", "normalized_auprc", "f1", "precision", "recall", "brier"]
     summary_rows: List[Dict[str, Any]] = []
-    for ratio in SUPPORTED_PRIMARY_RATIOS:
-        subset = per_fold_df[per_fold_df["ratio_value"] == ratio]
-        row: Dict[str, Any] = {
-            "ratio": f"1:{ratio}",
-            "model": PRIMARY_MODEL_NAME,
-            "ratio_value": ratio,
-            "n_folds": len(subset),
-            "preselected_primary_ratio": ratio == DEFAULT_PRIMARY_RATIO,
-            "mean_positive_prevalence": float(subset["positive_prevalence"].mean()),
-            "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
-        }
-        for metric in metric_columns:
-            row[f"mean_{metric}"] = float(subset[metric].mean())
-            row[f"sd_{metric}"] = float(subset[metric].std(ddof=1)) if len(subset) > 1 else 0.0
-        summary_rows.append(row)
+    for model_name in RATIO_COMPARISON_MODELS:
+        for ratio in SUPPORTED_PRIMARY_RATIOS:
+            subset = per_fold_df[
+                (per_fold_df["model"] == model_name)
+                & (per_fold_df["ratio_value"] == ratio)
+            ]
+            row: Dict[str, Any] = {
+                "ratio": f"1:{ratio}",
+                "model": model_name,
+                "ratio_value": ratio,
+                "n_folds": len(subset),
+                "preselected_primary_ratio": ratio == DEFAULT_PRIMARY_RATIO,
+                "mean_positive_prevalence": float(subset["positive_prevalence"].mean()),
+                "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+            }
+            for metric in metric_columns:
+                row[f"mean_{metric}"] = float(subset[metric].mean())
+                row[f"sd_{metric}"] = (
+                    float(subset[metric].std(ddof=1)) if len(subset) > 1 else 0.0
+                )
+            summary_rows.append(row)
 
-    reference = summary_rows[0]
-    for row in summary_rows:
-        delta = row["mean_auroc"] - reference["mean_auroc"]
-        pooled_sd = math.sqrt((row["sd_auroc"] ** 2 + reference["sd_auroc"] ** 2) / 2.0)
-        row["delta_auroc_vs_1_1"] = delta
-        row["delta_auroc_over_pooled_sd"] = delta / pooled_sd if pooled_sd > 0 else float("nan")
-        row["interpretation_note"] = (
-            "Normalized AUPRC adjusts the random baseline but is not fully prevalence invariant."
+    for model_name in RATIO_COMPARISON_MODELS:
+        model_rows = [row for row in summary_rows if row["model"] == model_name]
+        reference = next(row for row in model_rows if row["ratio_value"] == 1)
+        for row in model_rows:
+            delta = row["mean_auroc"] - reference["mean_auroc"]
+            pooled_sd = math.sqrt(
+                (row["sd_auroc"] ** 2 + reference["sd_auroc"] ** 2) / 2.0
+            )
+            row["delta_auroc_vs_1_1"] = delta
+            row["delta_auroc_over_pooled_sd"] = (
+                delta / pooled_sd if pooled_sd > 0 else float("nan")
+            )
+            row["interpretation_note"] = (
+                "Normalized AUPRC adjusts the random baseline but is not fully prevalence invariant."
+            )
+
+    summary_df = pd.DataFrame(summary_rows)
+    consensus_rows: List[Dict[str, Any]] = []
+    for ratio in SUPPORTED_PRIMARY_RATIOS:
+        subset = summary_df[summary_df["ratio_value"] == ratio]
+        consensus_rows.append(
+            {
+                "ratio": f"1:{ratio}",
+                "model": "Three-model descriptive mean",
+                "ratio_value": ratio,
+                "n_models": len(subset),
+                "models": ";".join(RATIO_COMPARISON_MODELS),
+                "n_folds_per_model": int(subset["n_folds"].iloc[0]),
+                "preselected_primary_ratio": ratio == DEFAULT_PRIMARY_RATIO,
+                "mean_positive_prevalence": float(subset["mean_positive_prevalence"].mean()),
+                "mean_auroc": float(subset["mean_auroc"].mean()),
+                "mean_normalized_auprc": float(subset["mean_normalized_auprc"].mean()),
+                "mean_f1": float(subset["mean_f1"].mean()),
+                "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+                "interpretation_note": (
+                    "Descriptive mean across representative classifiers; not a fitted ensemble."
+                ),
+            }
         )
 
     save_table(TABLE_DIR / "ratio_cv_per_fold.csv", per_fold_rows)
     save_table(TABLE_DIR / "ratio_cv_summary.csv", summary_rows)
+    save_table(TABLE_DIR / "ratio_cv_consensus_summary.csv", consensus_rows)
     save_table(TABLE_DIR / "ratio_cv_selected_go_stability.csv", stability_rows)
     save_table_aliases(
-        summary_rows,
+        consensus_rows,
         "ratio_sensitivity.csv",
         "table_robustness.csv",
         "table_negative_ratio_sensitivity.csv",
@@ -2476,10 +2671,16 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
     save_json(
         DATA_DIR / "ratio_cv_manifest.json",
         {
-            "protocol": "outer-training-only repeated stratified CV",
-            "model": PRIMARY_MODEL_NAME,
+            "protocol": RATIO_COMPARISON_PROTOCOL,
+            "models": list(RATIO_COMPARISON_MODELS),
+            "shared_folds_across_models": True,
             "outer_test_used": False,
             "preselected_primary_ratio": "1:1",
+            "ratio_selection_rule": (
+                "Prefer ratios with consistently high normalized AUPRC and F1 across models; "
+                "do not prefer a more imbalanced ratio for AUROC differences that are small "
+                "relative to fold variability."
+            ),
             "frequency_filter_scope": "label-free full GO-annotated background",
             "variance_mi_scope": "fold training only",
             "normalized_auprc_note": (
@@ -2490,44 +2691,77 @@ def run_ratio_sensitivity(bundle: DatasetBundle, context: PrimaryContext, fast: 
         },
     )
 
-    fig, ax = plt.subplots(figsize=(8, 4.8))
-    labels = [row["ratio"] for row in summary_rows]
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.6), sharex=True)
+    labels = [f"1:{ratio}" for ratio in SUPPORTED_PRIMARY_RATIOS]
     x = np.arange(len(labels))
-    ax.errorbar(
-        x,
-        [row["mean_auroc"] for row in summary_rows],
-        yerr=[row["sd_auroc"] for row in summary_rows],
-        marker="o",
-        capsize=4,
-        label="AUROC",
-    )
-    ax.errorbar(
-        x,
-        [row["mean_normalized_auprc"] for row in summary_rows],
-        yerr=[row["sd_normalized_auprc"] for row in summary_rows],
-        marker="o",
-        capsize=4,
-        color="#d62728",
-        label="Normalized AUPRC",
-    )
-    ax.set_xticks(x, labels)
-    ax.set_xlabel("Positive:negative ratio")
-    ax.set_ylabel("Cross-validated metric (mean +/- SD)")
-    ax.set_title("Cross-validated performance across class ratios")
-    ax.legend()
+    colours = {
+        "Logistic Regression": "#4c78a8",
+        "Random Forest": "#59a14f",
+        "XGBoost": "#e15759",
+    }
+    for model_name in RATIO_COMPARISON_MODELS:
+        model_rows = sorted(
+            (row for row in summary_rows if row["model"] == model_name),
+            key=lambda row: row["ratio_value"],
+        )
+        axes[0].errorbar(
+            x,
+            [row["mean_auroc"] for row in model_rows],
+            yerr=[row["sd_auroc"] for row in model_rows],
+            marker="o",
+            capsize=3,
+            color=colours[model_name],
+            label=model_name,
+        )
+        axes[1].errorbar(
+            x,
+            [row["mean_normalized_auprc"] for row in model_rows],
+            yerr=[row["sd_normalized_auprc"] for row in model_rows],
+            marker="o",
+            capsize=3,
+            color=colours[model_name],
+            label=model_name,
+        )
+    for ax in axes:
+        ax.set_xticks(x, labels)
+        ax.set_xlabel("Positive:negative ratio")
+        ax.grid(axis="y", alpha=0.25)
+    axes[0].set_ylabel("Cross-validated metric (mean +/- SD)")
+    axes[0].set_title("AUROC")
+    axes[1].set_title("Normalized AUPRC")
+    axes[1].legend(loc="best")
+    fig.suptitle("Training-only ratio sensitivity across representative classifiers")
     fig.tight_layout()
     for filename in ["ratio_cv_performance.png", "ratio_sensitivity.png", "Fig7_robustness.png"]:
         fig.savefig(FIG_DIR / filename, dpi=220)
     plt.close(fig)
 
     latex_df = pd.DataFrame(summary_rows)[
-        ["ratio", "n_folds", "mean_auroc", "sd_auroc", "mean_normalized_auprc", "sd_normalized_auprc", "mean_f1"]
+        [
+            "model",
+            "ratio",
+            "n_folds",
+            "mean_auroc",
+            "sd_auroc",
+            "mean_normalized_auprc",
+            "sd_normalized_auprc",
+            "mean_f1",
+        ]
     ].copy()
-    latex_df.columns = ["Ratio", "Folds", "AUROC", "AUROC SD", "Normalized AUPRC", "AUPRC SD", "F1"]
+    latex_df.columns = [
+        "Model",
+        "Ratio",
+        "Folds",
+        "AUROC",
+        "AUROC SD",
+        "Normalized AUPRC",
+        "AUPRC SD",
+        "F1",
+    ]
     write_latex_tabular(
         LATEX_TABLE_DIR / "table_robustness.tex",
         latex_df,
-        "Training-only nested cross-validation across positive-to-negative ratios.",
+        "Training-only nested ratio comparison across representative classifiers.",
         "tab:robustness_recomputed",
     )
     return summary_rows
@@ -3358,10 +3592,20 @@ def run_importance(
             vals = positive_class_shap_values(vals, len(bundle.feature_names))
             importance = np.mean(np.abs(vals), axis=0)
             method = "shap_mean_abs_positive_class"
-        except Exception:
+        except Exception as exc:
+            warnings.warn(
+                f"SHAP importance failed; using Random Forest feature importances instead: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             importance = getattr(model, "feature_importances_", np.zeros(len(bundle.feature_names)))
             method = "model_feature_importance_fallback"
     else:
+        warnings.warn(
+            "SHAP is unavailable; using Random Forest feature importances instead.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         importance = getattr(model, "feature_importances_", np.zeros(len(bundle.feature_names)))
         method = "model_feature_importance_fallback"
     rows = [
@@ -3812,9 +4056,9 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         rows.append(
             {
                 "analysis_name": "negative_ratio_sensitivity",
-                "model": PRIMARY_MODEL_NAME,
+                "model": "; ".join(RATIO_COMPARISON_MODELS),
                 "run_mode": run_mode_from_args(args),
-                "model_comparison_protocol": "",
+                "model_comparison_protocol": RATIO_COMPARISON_PROTOCOL,
                 "n_splits": cv_splits,
                 "n_repeats": cv_repeats,
                 "total_folds": cv_splits * cv_repeats,
@@ -4058,6 +4302,9 @@ def save_manifest(
         "primary_split_stratification": "database_source",
         "negative_source_isolation": True,
         "ratio_cv_nested_feature_selection": True,
+        "ratio_cv_models": list(RATIO_COMPARISON_MODELS),
+        "ratio_cv_shared_folds_across_models": True,
+        "ratio_cv_protocol": RATIO_COMPARISON_PROTOCOL,
         "preselected_primary_ratio": "1:1",
         "pathway_grouping": bundle.grouping_summary,
         "selected_go_sha256": selected_go_sha256,
@@ -4101,7 +4348,7 @@ def save_manifest(
         "notes": [
             "Raw mode rebuilds the dataset from the documented TAIR, KEGG, and PMN/AraCyc inputs.",
             f"The {N_GO_TERMS} GO terms are selected only from the primary outer-training records.",
-            "Ratio comparison repeats variance and mutual-information selection inside each fold training side.",
+            "Ratio comparison uses shared folds for Logistic Regression, Random Forest, and XGBoost, with variance and mutual-information selection repeated inside each fold training side.",
             "Source-derived negative controls are generated independently on each split side.",
             f"{PRIMARY_MODEL_NAME} is the primary model for held-out evaluation and downstream analyses.",
             "The 13-model comparison is confined to shared outer-training CV folds; it does not use the outer test set.",
@@ -4121,6 +4368,7 @@ def save_manifest(
             "method_comparison": "tables/table_method_comparison.csv and figures/Fig8_methods.png",
             "training_only_ratio_cv": (
                 "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, "
+                "tables/ratio_cv_consensus_summary.csv, "
                 "data/ratio_cv_manifest.json, and figures/Fig7_robustness.png"
             ),
             "go_feature_count_sensitivity": (
@@ -4144,6 +4392,16 @@ def save_manifest(
             "latex_fragments": "tables/latex/*.tex",
         },
     }
+    selection_config_path = DATA_DIR / SELECTION_CONFIG_NAME
+    if selection_config_path.exists():
+        selection_config = json.loads(selection_config_path.read_text(encoding="utf-8"))
+        manifest["selection_configuration"] = {
+            "path": project_relative_path(selection_config_path),
+            "sha256": sha256_file(selection_config_path),
+            "status": selection_config.get("status"),
+            "stage_order": selection_config.get("selection_stage_order", []),
+            "frozen_configuration": selection_config.get("frozen_configuration", {}),
+        }
     save_json(OUT_DIR / "manifest.json", manifest)
 
 
@@ -4386,6 +4644,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     ensure_dirs()
     remove_obsolete_analysis_outputs()
+    frozen_config_env = os.environ.get(SELECTION_CONFIG_ENV)
+    if frozen_config_env and any(section in args.sections for section in FINAL_STAGE_SECTIONS):
+        frozen_config_path = Path(frozen_config_env)
+        validate_frozen_selection_configuration(frozen_config_path, args)
+        print(
+            f"Validated frozen selection configuration: {frozen_config_path}",
+            flush=True,
+        )
     if args.dataset_source == "cached":
         print("Loading cached manuscript dataset from data_robustness/ ...", flush=True)
         bundle = load_cached_bundle()
@@ -4440,23 +4706,48 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
 
 def run_all_in_child_processes(args: argparse.Namespace) -> None:
-    """Run all analyses in isolated child processes for stability.
+    """Run selection first, freeze it, then run the final analyses.
 
-    Splits the work into 3 chunks to avoid native library conflicts
-    (LightGBM/CatBoost/XGBoost) when all run in one process.
+    Separate child processes avoid native-library conflicts.  The stage split
+    also ensures that training-only ratio, model, and feature-count evidence is
+    written and frozen before the held-out benchmark and downstream analyses.
     """
     configure_output_dir(args.out_dir)
     ensure_dirs()
     remove_obsolete_analysis_outputs()
-    chunks = [
-        ["main", "ratio", "go-count", "importance"],
-        ["models"],
-        ["ablation"],
-    ]
     env = os.environ.copy()
     env["PATHWAYML_CHILD"] = "1"
     env["PYTHONWARNINGS"] = "ignore"
-    for chunk in chunks:
+
+    selection_chunks = [[section] for section in SELECTION_STAGE_SECTIONS]
+    for chunk in selection_chunks:
+        cmd = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--dataset-source",
+            args.dataset_source,
+            "--raw-dir",
+            args.raw_dir,
+            "--out-dir",
+            str(OUT_DIR),
+            "--primary-ratio",
+            str(args.primary_ratio),
+            "--sections",
+            *chunk,
+        ]
+        if args.quick:
+            cmd.append("--quick")
+        print(f"\n=== Running chunk: {' '.join(chunk)} ===", flush=True)
+        subprocess.run(cmd, cwd=str(ROOT), env=env, check=True)
+
+    selection_config_path = freeze_selection_configuration(args)
+    env[SELECTION_CONFIG_ENV] = str(selection_config_path.resolve())
+    print(f"\n=== Frozen selection: {selection_config_path} ===", flush=True)
+
+    # These sections share the frozen configuration. Running them together
+    # preserves the documented order and lets SHAP reuse the fitted main model.
+    final_chunks = [["main", "ablation", "importance"]]
+    for chunk in final_chunks:
         cmd = [
             sys.executable,
             str(Path(__file__).resolve()),
@@ -4507,11 +4798,11 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
     ensure_dirs()
     remove_obsolete_analysis_outputs()
     sections = list(args.sections)
-    chunks = []
-    non_model = [s for s in sections if s != "models"]
-    if non_model:
-        chunks.append(non_model)
-    chunks.append(["models"])
+    selection_sections = [section for section in SELECTION_STAGE_SECTIONS if section in sections]
+    final_sections = [section for section in FINAL_STAGE_SECTIONS if section in sections]
+    chunks = [[section] for section in selection_sections]
+    if final_sections:
+        chunks.append(final_sections)
 
     env = os.environ.copy()
     env["PATHWAYML_CHILD"] = "1"
