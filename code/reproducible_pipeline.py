@@ -20,8 +20,9 @@ The pipeline:
    69-dimensional representation;
 4. regenerates the four control classes used by this analysis
    (random[5,30], shuffled, partial, cross-pathway);
-5. runs training-only ratio, model, and GO-count comparisons, then freezes the
-   retained configuration before the final held-out and downstream analyses;
+5. runs training-only ratio, model, GO-count, and model-specific parameter
+   comparisons, then freezes the retained configuration before the final
+   held-out and downstream analyses;
 6. runs the main benchmark, ablation, and SHAP/importance summary;
 7. saves machine-readable tables, figures, and provenance under an isolated
    result directory.
@@ -51,7 +52,7 @@ import warnings
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from itertools import combinations
+from itertools import combinations, product
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Sequence, Tuple
 
@@ -169,10 +170,20 @@ RATIO_COMPARISON_MODELS = (
     "XGBoost",
 )
 RATIO_COMPARISON_PROTOCOL = "shared_nested_cv_folds_across_representative_classifiers"
+TREE_TUNING_PROTOCOL = "training_only_repeated_cv_model_specific_small_grids"
+TREE_TUNING_SELECTION_METRIC = "mean_auroc"
+TREE_TUNING_CONFIGS_PER_MODEL = 12
+TREE_TUNING_SELECTED_NAME = "selected_tree_hyperparameters.json"
 SELECTION_CONFIG_NAME = "frozen_selection_config.json"
 SELECTION_CONFIG_ENV = "PATHWAYML_SELECTION_CONFIG"
-SELECTION_STAGE_SECTIONS = ("ratio", "models", "go-count")
+SELECTION_STAGE_SECTIONS = ("ratio", "models", "go-count", "tune")
 FINAL_STAGE_SECTIONS = ("main", "ablation", "importance")
+
+# Final-stage model builders read this mapping only after the training-only
+# selection record has been frozen and validated. Selection analyses therefore
+# continue to use their declared default settings and never inspect outer-test
+# performance while choosing component parameters.
+ACTIVE_TREE_HYPERPARAMETERS: Dict[str, Dict[str, Any]] | None = None
 
 # Pairwise Jaccard uses every annotated gene for small and medium gene sets.
 # Larger sets use a deterministic local sample so feature construction remains
@@ -468,16 +479,27 @@ def sha256_file(path: Path) -> str:
 def freeze_selection_configuration(args: argparse.Namespace) -> Path:
     """Freeze training-only choices before the final held-out stage.
 
-    The ratio, model, and GO-count analyses write their evidence first.  This
-    function checks that the reported primary configuration is supported by
-    those outputs, then records the choices and input hashes for the final
-    stage.  The outer-test analysis is not read here.
+    The ratio, model, GO-count, and tree-parameter analyses write their
+    evidence first. This function checks those outputs, then records the
+    choices and input hashes for the final stage. The outer-test analysis is
+    not read here.
     """
     ratio_path = TABLE_DIR / "ratio_cv_consensus_summary.csv"
     model_path = TABLE_DIR / "model_comparison.csv"
     ensemble_path = TABLE_DIR / "tree_ensemble_cv.csv"
     go_count_path = TABLE_DIR / "go_feature_count_cv_summary.csv"
-    required = (ratio_path, model_path, ensemble_path, go_count_path)
+    tuning_summary_path = TABLE_DIR / "tree_hyperparameter_tuning_summary.csv"
+    tuning_selected_path = DATA_DIR / TREE_TUNING_SELECTED_NAME
+    tuned_ensemble_path = TABLE_DIR / "tree_tuned_ensemble_cv.csv"
+    required = (
+        ratio_path,
+        model_path,
+        ensemble_path,
+        go_count_path,
+        tuning_summary_path,
+        tuning_selected_path,
+        tuned_ensemble_path,
+    )
     missing = [project_relative_path(path) for path in required if not path.exists()]
     if missing:
         raise FileNotFoundError(
@@ -489,6 +511,11 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
     model_df = pd.read_csv(model_path)
     ensemble_df = pd.read_csv(ensemble_path)
     go_count_df = pd.read_csv(go_count_path)
+    tuning_df = pd.read_csv(tuning_summary_path)
+    tuning_payload = json.loads(tuning_selected_path.read_text(encoding="utf-8"))
+    tuned_ensemble_df = pd.read_csv(tuned_ensemble_path)
+    selected_tree_parameters = tuning_payload.get("parameters", {})
+    validate_tree_hyperparameters(selected_tree_parameters)
 
     ratio_by_auprc = int(ratio_df.loc[ratio_df["mean_normalized_auprc"].idxmax(), "ratio_value"])
     ratio_by_f1 = int(ratio_df.loc[ratio_df["mean_f1"].idxmax(), "ratio_value"])
@@ -540,6 +567,18 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
         gain <= GO_COUNT_POOLED_SD_TOLERANCE
         for gain in largest_standardized_gains.values()
     )
+    successful_tuning = tuning_df[tuning_df["status"] == "ok"]
+    expected_configs = 2 if args.quick else TREE_TUNING_CONFIGS_PER_MODEL
+    supports_tuning = (
+        not bool(tuning_payload.get("outer_test_used", True))
+        and set(selected_tree_parameters) == set(TREE_ENSEMBLE_COMPONENT_NAMES)
+        and all(
+            len(successful_tuning[successful_tuning["model"] == model_name])
+            == expected_configs
+            for model_name in TREE_ENSEMBLE_COMPONENT_NAMES
+        )
+        and len(tuned_ensemble_df) == 1
+    )
     if not args.quick:
         if not supports_ratio:
             raise ValueError(
@@ -554,13 +593,15 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
                 "A larger GO representation improves at least one metric by more "
                 "than the pooled-SD tolerance; review the retained feature count."
             )
+        if not supports_tuning:
+            raise ValueError("The six model-specific tuning searches are incomplete.")
 
     evidence_files = {
         project_relative_path(path): sha256_file(path)
         for path in required
     }
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "frozen_before_final_stage",
         "run_mode": run_mode_from_args(args),
         "selection_stage_order": list(SELECTION_STAGE_SECTIONS),
@@ -571,6 +612,7 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
             "primary_model": PRIMARY_MODEL_NAME,
             "n_go_terms": N_GO_TERMS,
             "n_total_features": N_TOTAL_FEATURES,
+            "tree_hyperparameters": selected_tree_parameters,
         },
         "training_only_evidence": {
             "ratio": {
@@ -596,6 +638,22 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
                 "pooled_sd_tolerance": GO_COUNT_POOLED_SD_TOLERANCE,
                 "supports_compact_retained_count": supports_compact_go_count,
             },
+            "tree_hyperparameters": {
+                "protocol": TREE_TUNING_PROTOCOL,
+                "configs_per_model": expected_configs,
+                "selected_config_ids": tuning_payload.get("selected_config_ids", {}),
+                "selected_parameters_sha256": tuning_payload.get(
+                    "selected_parameters_sha256"
+                ),
+                "tuned_ensemble_mean_auroc": float(
+                    tuned_ensemble_df.iloc[0]["mean_auroc"]
+                ),
+                "tuned_ensemble_sd_auroc": float(
+                    tuned_ensemble_df.iloc[0]["sd_auroc"]
+                ),
+                "supports_frozen_parameters": supports_tuning,
+                "outer_test_used": False,
+            },
         },
         "evidence_file_sha256": evidence_files,
     }
@@ -612,14 +670,19 @@ def validate_frozen_selection_configuration(
     if not path.exists():
         raise FileNotFoundError(f"Frozen selection configuration not found: {path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
-    expected = {
+    expected_scalars = {
         "primary_ratio": f"1:{args.primary_ratio}",
         "primary_model": PRIMARY_MODEL_NAME,
         "n_go_terms": N_GO_TERMS,
         "n_total_features": N_TOTAL_FEATURES,
     }
-    if payload.get("frozen_configuration") != expected:
+    frozen = payload.get("frozen_configuration", {})
+    if any(frozen.get(key) != value for key, value in expected_scalars.items()):
         raise ValueError("Frozen selection configuration does not match the requested final run.")
+    selected_tree_parameters = frozen.get("tree_hyperparameters")
+    if selected_tree_parameters is None:
+        raise ValueError("Frozen selection configuration has no tuned tree parameters.")
+    validate_tree_hyperparameters(selected_tree_parameters)
     if payload.get("status") != "frozen_before_final_stage":
         raise ValueError("Selection configuration is not marked as frozen.")
     for relative_path, expected_hash in payload.get("evidence_file_sha256", {}).items():
@@ -1844,117 +1907,259 @@ def prepare_primary_context(
     )
 
 
-def xgb_model(
-    scale_pos_weight: float = 2.0,
-    fast: bool = False,
-    random_state: int = SEED,
-    n_jobs: int = -1,
-) -> XGBClassifier:
-    """Create the XGBoost estimator used in the model-comparison analysis.
-
-    Full mode uses the locked 500-tree comparison configuration. --quick mode
-    uses fewer trees only for fast checks.
-    The caller supplies the analysis-specific ``scale_pos_weight`` computed
-    from the current training split.
-    """
-    return XGBClassifier(
-        n_estimators=40 if fast else 500,
-        max_depth=5,
-        learning_rate=0.08 if fast else 0.03,
-        subsample=0.8,
-        colsample_bytree=0.7,
-        scale_pos_weight=scale_pos_weight,
-        min_child_weight=3,
-        reg_alpha=0.1,
-        reg_lambda=1.0,
-        objective="binary:logistic",
-        tree_method="hist",
-        eval_metric="logloss",
-        random_state=random_state,
-        n_jobs=n_jobs,
-        verbosity=0,
-    )
-
-
-def random_forest_model(
-    fast: bool = False,
-    random_state: int = SEED,
-    n_jobs: int = 1,
-) -> RandomForestClassifier:
-    """Create the Random Forest used in comparison and ensemble analyses."""
-    return RandomForestClassifier(
-        n_estimators=120 if fast else 500,
-        max_depth=10,
-        max_features="sqrt",
-        class_weight="balanced",
-        random_state=random_state,
-        n_jobs=n_jobs,
-    )
-
-
-def tree_model_factory_catalog(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
-    """Return the six tree-model builders used by the soft-voting ensemble."""
-    factories: Dict[str, Callable[[float, int], Any]] = {
-        "Random Forest": lambda _spw, seed: random_forest_model(
-            fast=fast, random_state=seed
-        ),
-        "Extra Trees": lambda _spw, seed: ExtraTreesClassifier(
-            n_estimators=120 if fast else 500,
-            max_depth=10,
-            max_features="sqrt",
-            class_weight="balanced",
-            random_state=seed,
-            # Parallel Extra Trees introduced sub-ULP prediction drift on this
-            # environment, so the formal estimator is kept single-threaded.
-            n_jobs=1,
-        ),
-        "Gradient Boosting": lambda _spw, seed: GradientBoostingClassifier(
-            n_estimators=100 if fast else 300,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            random_state=seed,
-        ),
-        "XGBoost": lambda spw, seed: xgb_model(
-            scale_pos_weight=spw, fast=fast, random_state=seed
-        ),
+def default_tree_hyperparameters(fast: bool) -> Dict[str, Dict[str, Any]]:
+    """Return the untuned component settings used before parameter selection."""
+    return {
+        "Random Forest": {
+            "n_estimators": 120 if fast else 500,
+            "max_depth": 10,
+            "max_features": "sqrt",
+        },
+        "Extra Trees": {
+            "n_estimators": 120 if fast else 500,
+            "max_depth": 10,
+            "max_features": "sqrt",
+        },
+        "Gradient Boosting": {
+            "n_estimators": 100 if fast else 300,
+            "max_depth": 4,
+            "learning_rate": 0.05,
+        },
+        "XGBoost": {
+            "n_estimators": 40 if fast else 500,
+            "max_depth": 5,
+            "learning_rate": 0.08 if fast else 0.03,
+        },
+        "LightGBM": {
+            "n_estimators": 160 if fast else 500,
+            "max_depth": 5,
+            "num_leaves": 31 if fast else 63,
+            "learning_rate": 0.05 if fast else 0.03,
+        },
+        "CatBoost": {
+            "iterations": 160 if fast else 500,
+            "depth": 5,
+            "learning_rate": 0.05 if fast else 0.03,
+        },
     }
-    if lgb is not None:
-        factories["LightGBM"] = lambda spw, seed: lgb.LGBMClassifier(
-            n_estimators=160 if fast else 500,
-            max_depth=5,
-            learning_rate=0.05 if fast else 0.03,
-            num_leaves=31 if fast else 63,
+
+
+def tree_hyperparameter_grid(fast: bool) -> Dict[str, List[Dict[str, Any]]]:
+    """Return deterministic model-specific candidate lists.
+
+    Full mode evaluates 12 compact configurations per model. Quick mode keeps
+    two representative settings per model so the complete tuning workflow can
+    be tested without running all 1,080 formal model fits.
+    """
+    if fast:
+        return {
+            "Random Forest": [
+                {"n_estimators": 120, "max_depth": 8, "max_features": "sqrt"},
+                {"n_estimators": 120, "max_depth": 10, "max_features": "sqrt"},
+            ],
+            "Extra Trees": [
+                {"n_estimators": 120, "max_depth": 8, "max_features": "sqrt"},
+                {"n_estimators": 120, "max_depth": 10, "max_features": "sqrt"},
+            ],
+            "Gradient Boosting": [
+                {"n_estimators": 100, "max_depth": 3, "learning_rate": 0.05},
+                {"n_estimators": 100, "max_depth": 4, "learning_rate": 0.05},
+            ],
+            "XGBoost": [
+                {"n_estimators": 40, "max_depth": 3, "learning_rate": 0.08},
+                {"n_estimators": 40, "max_depth": 5, "learning_rate": 0.08},
+            ],
+            "LightGBM": [
+                {"n_estimators": 80, "max_depth": 4, "num_leaves": 15, "learning_rate": 0.05},
+                {"n_estimators": 160, "max_depth": 5, "num_leaves": 63, "learning_rate": 0.05},
+            ],
+            "CatBoost": [
+                {"iterations": 80, "depth": 4, "learning_rate": 0.05},
+                {"iterations": 160, "depth": 5, "learning_rate": 0.05},
+            ],
+        }
+
+    grids = {
+        "Random Forest": [
+            {"n_estimators": n, "max_depth": depth, "max_features": features}
+            for n, depth, features in product(
+                (300, 500), (8, 10, None), ("sqrt", 0.5)
+            )
+        ],
+        "Extra Trees": [
+            {"n_estimators": n, "max_depth": depth, "max_features": features}
+            for n, depth, features in product(
+                (300, 500), (8, 10, None), ("sqrt", 0.5)
+            )
+        ],
+        "Gradient Boosting": [
+            {"n_estimators": n, "max_depth": depth, "learning_rate": rate}
+            for n, depth, rate in product((200, 300, 500), (3, 4), (0.03, 0.05))
+        ],
+        "XGBoost": [
+            {"n_estimators": n, "max_depth": depth, "learning_rate": rate}
+            for n, depth, rate in product((300, 500), (3, 5, 7), (0.03, 0.05))
+        ],
+        "LightGBM": [
+            {
+                "n_estimators": n,
+                "max_depth": depth,
+                "num_leaves": leaves,
+                "learning_rate": rate,
+            }
+            for n, (depth, leaves), rate in product(
+                (300, 500), ((4, 15), (5, 63), (7, 63)), (0.03, 0.05)
+            )
+        ],
+        "CatBoost": [
+            {"iterations": n, "depth": depth, "learning_rate": rate}
+            for n, depth, rate in product((300, 500), (4, 5, 6), (0.03, 0.05))
+        ],
+    }
+    if any(len(configs) != TREE_TUNING_CONFIGS_PER_MODEL for configs in grids.values()):
+        raise AssertionError("Each full tree-model grid must contain exactly 12 configurations.")
+    return grids
+
+
+def validate_tree_hyperparameters(parameters: Mapping[str, Mapping[str, Any]]) -> None:
+    """Check that a frozen parameter mapping covers the six components."""
+    if set(parameters) != set(TREE_ENSEMBLE_COMPONENT_NAMES):
+        raise ValueError("Tree hyperparameters must cover all six ensemble components.")
+    expected_fields = default_tree_hyperparameters(fast=False)
+    for name in TREE_ENSEMBLE_COMPONENT_NAMES:
+        if set(parameters[name]) != set(expected_fields[name]):
+            raise ValueError(f"Unexpected hyperparameter fields for {name}.")
+
+
+def activate_tree_hyperparameters(parameters: Mapping[str, Mapping[str, Any]] | None) -> None:
+    """Set or clear the frozen component parameters used by final analyses."""
+    global ACTIVE_TREE_HYPERPARAMETERS
+    if parameters is None:
+        ACTIVE_TREE_HYPERPARAMETERS = None
+        return
+    validate_tree_hyperparameters(parameters)
+    ACTIVE_TREE_HYPERPARAMETERS = {
+        name: dict(parameters[name]) for name in TREE_ENSEMBLE_COMPONENT_NAMES
+    }
+
+
+def current_tree_hyperparameters(fast: bool) -> Dict[str, Dict[str, Any]]:
+    """Return active frozen parameters, or defaults before tuning is frozen."""
+    source = ACTIVE_TREE_HYPERPARAMETERS or default_tree_hyperparameters(fast)
+    return {name: dict(source[name]) for name in TREE_ENSEMBLE_COMPONENT_NAMES}
+
+
+def build_tree_estimator(
+    name: str,
+    parameters: Mapping[str, Any],
+    scale_pos_weight: float,
+    random_state: int,
+) -> Any:
+    """Build one deterministic tree estimator from an audited parameter set."""
+    params = dict(parameters)
+    if name == "Random Forest":
+        return RandomForestClassifier(
+            **params,
+            class_weight="balanced",
+            random_state=random_state,
+            n_jobs=1,
+        )
+    if name == "Extra Trees":
+        return ExtraTreesClassifier(
+            **params,
+            class_weight="balanced",
+            random_state=random_state,
+            n_jobs=1,
+        )
+    if name == "Gradient Boosting":
+        return GradientBoostingClassifier(
+            **params,
+            subsample=0.8,
+            random_state=random_state,
+        )
+    if name == "XGBoost":
+        return XGBClassifier(
+            **params,
             subsample=0.8,
             colsample_bytree=0.7,
-            scale_pos_weight=spw,
-            random_state=seed,
-            n_jobs=-1,
+            scale_pos_weight=scale_pos_weight,
+            min_child_weight=3,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
+            objective="binary:logistic",
+            tree_method="hist",
+            eval_metric="logloss",
+            random_state=random_state,
+            n_jobs=1,
+            verbosity=0,
+        )
+    if name == "LightGBM":
+        if lgb is None:
+            raise RuntimeError("LightGBM is required by the six-tree ensemble.")
+        return lgb.LGBMClassifier(
+            **params,
+            subsample=0.8,
+            colsample_bytree=0.7,
+            scale_pos_weight=scale_pos_weight,
+            random_state=random_state,
+            n_jobs=1,
             verbose=-1,
         )
-    if cb is not None:
-        factories["CatBoost"] = lambda spw, seed: cb.CatBoostClassifier(
-            iterations=160 if fast else 500,
-            depth=5,
-            learning_rate=0.05 if fast else 0.03,
-            scale_pos_weight=spw,
-            random_seed=seed,
+    if name == "CatBoost":
+        if cb is None:
+            raise RuntimeError("CatBoost is required by the six-tree ensemble.")
+        return cb.CatBoostClassifier(
+            **params,
+            scale_pos_weight=scale_pos_weight,
+            random_seed=random_state,
             verbose=0,
             allow_writing_files=False,
-            thread_count=-1,
+            thread_count=1,
         )
-    return factories
+    raise KeyError(f"Unknown tree model: {name}")
+
+
+def tree_model_factory_catalog(
+    fast: bool,
+    parameter_sets: Mapping[str, Mapping[str, Any]] | None = None,
+) -> Dict[str, Callable[[float, int], Any]]:
+    """Return the six tree-model builders used by the soft-voting ensemble."""
+    selected = (
+        {name: dict(parameter_sets[name]) for name in TREE_ENSEMBLE_COMPONENT_NAMES}
+        if parameter_sets is not None
+        else current_tree_hyperparameters(fast)
+    )
+    return {
+        name: (
+            lambda spw, seed, model_name=name, params=dict(selected[name]):
+            build_tree_estimator(model_name, params, spw, seed)
+        )
+        for name in TREE_ENSEMBLE_COMPONENT_NAMES
+    }
 
 
 class SixTreeSoftVotingClassifier:
     """Equal-weight probability average of six independently fitted tree models."""
 
-    def __init__(self, fast: bool = False, random_state: int = SEED) -> None:
+    def __init__(
+        self,
+        fast: bool = False,
+        random_state: int = SEED,
+        component_hyperparameters: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> None:
         self.fast = fast
         self.random_state = random_state
+        self.component_hyperparameters = (
+            {name: dict(component_hyperparameters[name]) for name in TREE_ENSEMBLE_COMPONENT_NAMES}
+            if component_hyperparameters is not None
+            else None
+        )
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "SixTreeSoftVotingClassifier":
-        factories = tree_model_factory_catalog(self.fast)
+        factories = tree_model_factory_catalog(
+            self.fast,
+            parameter_sets=self.component_hyperparameters,
+        )
         missing = [name for name in TREE_ENSEMBLE_COMPONENT_NAMES if name not in factories]
         if missing:
             raise RuntimeError(
@@ -2004,7 +2209,11 @@ def primary_model(
     random_state: int = SEED,
 ) -> SixTreeSoftVotingClassifier:
     """Return a fresh six-tree soft-voting estimator."""
-    return SixTreeSoftVotingClassifier(fast=fast, random_state=random_state)
+    return SixTreeSoftVotingClassifier(
+        fast=fast,
+        random_state=random_state,
+        component_hyperparameters=current_tree_hyperparameters(fast),
+    )
 
 
 def predict_scores(model: Any, X: np.ndarray) -> np.ndarray:
@@ -3721,6 +3930,348 @@ def run_model_comparison(
     return rows
 
 
+def tree_tuning_config_id(model_name: str, config_index: int) -> str:
+    """Return a stable, readable identifier for one tuning configuration."""
+    slug = re.sub(r"[^a-z0-9]+", "_", model_name.lower()).strip("_")
+    return f"{slug}_{config_index:02d}"
+
+
+def select_tree_hyperparameters(
+    summary_rows: Sequence[Mapping[str, Any]],
+) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
+    """Select one configuration per model using a fixed lexicographic rule.
+
+    Mean AUROC is the primary criterion. Mean AUPRC, mean F1, AUROC SD,
+    and the stable configuration ID resolve progressively rarer ties. Runtime
+    is reported but is not used for selection because it varies with system load.
+    """
+    selected_parameters: Dict[str, Dict[str, Any]] = {}
+    selected_rows: List[Dict[str, Any]] = []
+    for model_name in TREE_ENSEMBLE_COMPONENT_NAMES:
+        candidates = [
+            dict(row)
+            for row in summary_rows
+            if row.get("model") == model_name and row.get("status") == "ok"
+        ]
+        if not candidates:
+            raise ValueError(f"No successful tuning configuration for {model_name}.")
+        winner = min(
+            candidates,
+            key=lambda row: (
+                -round(float(row["mean_auroc"]), 12),
+                -round(float(row["mean_auprc"]), 12),
+                -round(float(row["mean_f1"]), 12),
+                round(float(row["sd_auroc"]), 12),
+                str(row["config_id"]),
+            ),
+        )
+        parameters = json.loads(str(winner["parameters_json"]))
+        selected_parameters[model_name] = parameters
+        selected_rows.append({**winner, "selected": True})
+    validate_tree_hyperparameters(selected_parameters)
+    return selected_parameters, selected_rows
+
+
+def run_tree_hyperparameter_tuning(
+    bundle: DatasetBundle,
+    context: PrimaryContext,
+    fast: bool,
+) -> List[Dict[str, Any]]:
+    """Tune each primary tree component on repeated outer-training CV folds.
+
+    This is a model-specific training-only grid search. Every candidate sees
+    the same source-isolated folds and the same fold-training-selected 60-term
+    representation. The outer test set is neither encoded nor scored here.
+    """
+    if context.ratio != DEFAULT_PRIMARY_RATIO:
+        raise ValueError("Tree hyperparameter tuning is defined for the primary 1:1 ratio.")
+    if lgb is None or cb is None:
+        raise RuntimeError("LightGBM and CatBoost are required for six-tree tuning.")
+
+    folds = build_cv_fold_datasets(
+        bundle,
+        context,
+        ratio=context.ratio,
+        fast=fast,
+        analysis_name="tree_hyperparameter_tuning",
+    )
+    outer_test_ids = {str(record["id"]) for record in context.test_positive_records}
+    for fold in folds:
+        fold_ids = set(fold.train_positive_ids) | set(fold.validation_positive_ids)
+        if fold_ids & outer_test_ids:
+            raise AssertionError("Outer-test pathways entered tree hyperparameter tuning.")
+
+    grids = tree_hyperparameter_grid(fast)
+    per_fold_rows: List[Dict[str, Any]] = []
+    summary_rows: List[Dict[str, Any]] = []
+    score_cache: Dict[Tuple[str, str, int, int], np.ndarray] = {}
+    expected_folds = len(folds)
+    metric_columns = (
+        "auroc",
+        "auprc",
+        "normalized_auprc",
+        "f1",
+        "precision",
+        "recall",
+        "brier",
+        "elapsed_s",
+    )
+
+    for model_name in TREE_ENSEMBLE_COMPONENT_NAMES:
+        print(f"  - tuning {model_name}", flush=True)
+        for config_index, parameters in enumerate(grids[model_name], start=1):
+            config_id = tree_tuning_config_id(model_name, config_index)
+            parameters_json = json.dumps(
+                parameters,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            parameters_sha256 = stable_json_sha256(parameters)
+            config_rows: List[Dict[str, Any]] = []
+            failure = ""
+            try:
+                for fold in folds:
+                    started = time.perf_counter()
+                    model = build_tree_estimator(
+                        model_name,
+                        parameters,
+                        fold.scale_pos_weight,
+                        fold.model_seed,
+                    )
+                    model.fit(fold.X_train, fold.y_train)
+                    scores = predict_scores(model, fold.X_validation)
+                    elapsed_s = time.perf_counter() - started
+                    metrics = metrics_from_scores(fold.y_validation, scores)
+                    prevalence = float(np.mean(fold.y_validation == 1))
+                    row = {
+                        "model": model_name,
+                        "config_id": config_id,
+                        "config_index": config_index,
+                        "parameters_json": parameters_json,
+                        "parameters_sha256": parameters_sha256,
+                        "repeat_index": fold.repeat_index,
+                        "repeat_seed": fold.repeat_seed,
+                        "fold_index": fold.fold_index,
+                        "ratio": f"1:{fold.ratio}",
+                        "n_train": len(fold.y_train),
+                        "n_validation": len(fold.y_validation),
+                        "positive_prevalence": prevalence,
+                        "auroc": metrics["test_auroc"],
+                        "auprc": metrics["test_auprc"],
+                        "normalized_auprc": normalized_auprc(
+                            metrics["test_auprc"], prevalence
+                        ),
+                        "f1": metrics["f1"],
+                        "precision": metrics["precision"],
+                        "recall": metrics["recall"],
+                        "brier": metrics["brier"],
+                        "elapsed_s": elapsed_s,
+                        "scale_pos_weight": (
+                            fold.scale_pos_weight
+                            if model_name in {"XGBoost", "LightGBM", "CatBoost"}
+                            else float("nan")
+                        ),
+                        "selected_go_sha256": fold.selected_go_sha256,
+                        "train_negative_seed": fold.train_negative_seed,
+                        "validation_negative_seed": fold.validation_negative_seed,
+                        "feature_selection_seed": fold.feature_selection_seed,
+                        "model_seed": fold.model_seed,
+                        "outer_test_used": False,
+                    }
+                    config_rows.append(row)
+                    score_cache[
+                        (model_name, config_id, fold.repeat_index, fold.fold_index)
+                    ] = np.asarray(scores, dtype=float)
+            except Exception as exc:  # pragma: no cover - dependency-specific failure path
+                failure = f"{type(exc).__name__}: {exc}"
+
+            if failure:
+                summary_rows.append(
+                    {
+                        "model": model_name,
+                        "config_id": config_id,
+                        "config_index": config_index,
+                        "parameters_json": parameters_json,
+                        "parameters_sha256": parameters_sha256,
+                        "status": "failed",
+                        "error": failure,
+                        "n_folds": 0,
+                    }
+                )
+                print(f"    {config_id}: failed ({failure})", flush=True)
+                continue
+
+            per_fold_rows.extend(config_rows)
+            config_df = pd.DataFrame(config_rows)
+            summary: Dict[str, Any] = {
+                "model": model_name,
+                "config_id": config_id,
+                "config_index": config_index,
+                "parameters_json": parameters_json,
+                "parameters_sha256": parameters_sha256,
+                "status": "ok",
+                "error": "",
+                "n_folds": len(config_rows),
+                "outer_test_used": False,
+                "selection_metric": TREE_TUNING_SELECTION_METRIC,
+            }
+            for metric in metric_columns:
+                summary[f"mean_{metric}"] = float(config_df[metric].mean())
+                summary[f"sd_{metric}"] = (
+                    float(config_df[metric].std(ddof=1)) if len(config_df) > 1 else 0.0
+                )
+            summary_rows.append(summary)
+            print(
+                f"    {config_id}: AUROC {summary['mean_auroc']:.4f} "
+                f"+/- {summary['sd_auroc']:.4f}",
+                flush=True,
+            )
+            save_table(
+                TABLE_DIR / "tree_hyperparameter_tuning_per_fold_partial.csv",
+                per_fold_rows,
+            )
+            save_table(
+                TABLE_DIR / "tree_hyperparameter_tuning_summary_partial.csv",
+                summary_rows,
+            )
+
+    selected_parameters, selected_rows = select_tree_hyperparameters(summary_rows)
+    selected_config_ids = {
+        row["model"]: row["config_id"] for row in selected_rows
+    }
+
+    ensemble_rows: List[Dict[str, Any]] = []
+    for fold in folds:
+        component_scores = [
+            score_cache[
+                (
+                    model_name,
+                    selected_config_ids[model_name],
+                    fold.repeat_index,
+                    fold.fold_index,
+                )
+            ]
+            for model_name in TREE_ENSEMBLE_COMPONENT_NAMES
+        ]
+        ensemble_scores = np.mean(component_scores, axis=0)
+        metrics = metrics_from_scores(fold.y_validation, ensemble_scores)
+        prevalence = float(np.mean(fold.y_validation == 1))
+        ensemble_rows.append(
+            {
+                "model": PRIMARY_MODEL_NAME,
+                "repeat_index": fold.repeat_index,
+                "repeat_seed": fold.repeat_seed,
+                "fold_index": fold.fold_index,
+                "auroc": metrics["test_auroc"],
+                "auprc": metrics["test_auprc"],
+                "normalized_auprc": normalized_auprc(
+                    metrics["test_auprc"], prevalence
+                ),
+                "f1": metrics["f1"],
+                "precision": metrics["precision"],
+                "recall": metrics["recall"],
+                "brier": metrics["brier"],
+                "selected_component_config_ids": ";".join(
+                    selected_config_ids[name] for name in TREE_ENSEMBLE_COMPONENT_NAMES
+                ),
+                "outer_test_used": False,
+            }
+        )
+    ensemble_df = pd.DataFrame(ensemble_rows)
+    ensemble_summary: Dict[str, Any] = {
+        "model": PRIMARY_MODEL_NAME,
+        "n_folds": len(ensemble_rows),
+        "component_models": ";".join(TREE_ENSEMBLE_COMPONENT_NAMES),
+        "selected_component_config_ids": ";".join(
+            selected_config_ids[name] for name in TREE_ENSEMBLE_COMPONENT_NAMES
+        ),
+        "aggregation": "equal_weight_mean_positive_class_probability",
+        "outer_test_used": False,
+    }
+    for metric in ("auroc", "auprc", "normalized_auprc", "f1", "precision", "recall", "brier"):
+        ensemble_summary[f"mean_{metric}"] = float(ensemble_df[metric].mean())
+        ensemble_summary[f"sd_{metric}"] = (
+            float(ensemble_df[metric].std(ddof=1)) if len(ensemble_df) > 1 else 0.0
+        )
+
+    save_table(TABLE_DIR / "tree_hyperparameter_tuning_per_fold.csv", per_fold_rows)
+    save_table(TABLE_DIR / "tree_hyperparameter_tuning_summary.csv", summary_rows)
+    save_table(TABLE_DIR / "tree_hyperparameter_selected.csv", selected_rows)
+    save_table(TABLE_DIR / "tree_tuned_ensemble_cv_per_fold.csv", ensemble_rows)
+    save_table(TABLE_DIR / "tree_tuned_ensemble_cv.csv", [ensemble_summary])
+    (TABLE_DIR / "tree_hyperparameter_tuning_per_fold_partial.csv").unlink(missing_ok=True)
+    (TABLE_DIR / "tree_hyperparameter_tuning_summary_partial.csv").unlink(missing_ok=True)
+
+    selected_payload = {
+        "schema_version": 1,
+        "protocol": TREE_TUNING_PROTOCOL,
+        "selection_rule": [
+            "highest mean AUROC",
+            "highest mean AUPRC",
+            "highest mean F1",
+            "lowest AUROC SD",
+            "stable configuration ID",
+        ],
+        "outer_test_used": False,
+        "n_folds": expected_folds,
+        "configs_per_model": 2 if fast else TREE_TUNING_CONFIGS_PER_MODEL,
+        "selected_config_ids": selected_config_ids,
+        "parameters": selected_parameters,
+        "selected_parameters_sha256": stable_json_sha256(selected_parameters),
+    }
+    save_json(DATA_DIR / TREE_TUNING_SELECTED_NAME, selected_payload)
+    save_json(
+        DATA_DIR / "tree_hyperparameter_tuning_manifest.json",
+        {
+            **selected_payload,
+            "candidate_grid": grids,
+            "candidate_grid_sha256": stable_json_sha256(grids),
+            "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+            "shared_fold_samples_across_all_configurations": True,
+            "shared_fold_features_across_all_configurations": True,
+            "hyperparameter_selection_is_fully_nested": False,
+            "interpretation_note": (
+                "Parameters are selected by repeated training-only CV. The outer test "
+                "set remains untouched, but hyperparameter selection is not repeated "
+                "inside an additional inner CV loop."
+            ),
+            "tuned_ensemble_cv_summary": ensemble_summary,
+        },
+    )
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharey=False)
+    for ax, model_name in zip(axes.flat, TREE_ENSEMBLE_COMPONENT_NAMES):
+        model_rows = [
+            row
+            for row in summary_rows
+            if row["model"] == model_name and row["status"] == "ok"
+        ]
+        config_numbers = np.arange(1, len(model_rows) + 1)
+        ax.errorbar(
+            config_numbers,
+            [row["mean_auroc"] for row in model_rows],
+            yerr=[row["sd_auroc"] for row in model_rows],
+            marker="o",
+            linewidth=1.2,
+            capsize=2,
+            color="#2f5f8f",
+        )
+        selected_number = next(
+            row["config_index"] for row in selected_rows if row["model"] == model_name
+        )
+        ax.axvline(selected_number, color="#c96f1a", linestyle="--", linewidth=1.1)
+        ax.set_title(model_name)
+        ax.set_xticks(config_numbers)
+        ax.set_xlabel("Configuration")
+        ax.set_ylabel("CV AUROC (mean +/- SD)")
+        ax.grid(axis="y", alpha=0.2)
+    fig.suptitle("Training-only tree hyperparameter comparison", fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(FIG_DIR / "tree_hyperparameter_tuning.png", dpi=220)
+    plt.close(fig)
+    return summary_rows
+
+
 def feature_group_indices(bundle: DatasetBundle) -> Dict[str, List[int]]:
     """Define feature-group ablation configurations.
 
@@ -4276,9 +4827,7 @@ def save_processed_data(bundle: DatasetBundle, context: PrimaryContext) -> None:
 def xgboost_hyperparameters(fast: bool) -> Dict[str, Any]:
     """Canonical XGBoost hyperparameters for audit output."""
     return {
-        "n_estimators": 40 if fast else 500,
-        "max_depth": 5,
-        "learning_rate": 0.08 if fast else 0.03,
+        **current_tree_hyperparameters(fast)["XGBoost"],
         "subsample": 0.8,
         "colsample_bytree": 0.7,
         "min_child_weight": 3,
@@ -4289,16 +4838,14 @@ def xgboost_hyperparameters(fast: bool) -> Dict[str, Any]:
         "eval_metric": "logloss",
         "scale_pos_weight_rule": SCALE_POS_WEIGHT_RULE,
         "random_state": SEED,
-        "n_jobs": -1,
+        "n_jobs": 1,
     }
 
 
 def random_forest_hyperparameters(fast: bool) -> Dict[str, Any]:
     """Canonical Random Forest hyperparameters for audit output."""
     return {
-        "n_estimators": 120 if fast else 500,
-        "max_depth": 10,
-        "max_features": "sqrt",
+        **current_tree_hyperparameters(fast)["Random Forest"],
         "class_weight": "balanced",
         "random_state": SEED,
         "n_jobs": 1,
@@ -4308,9 +4855,7 @@ def random_forest_hyperparameters(fast: bool) -> Dict[str, Any]:
 def extra_trees_hyperparameters(fast: bool) -> Dict[str, Any]:
     """Canonical Extra Trees hyperparameters for audit output."""
     return {
-        "n_estimators": 120 if fast else 500,
-        "max_depth": 10,
-        "max_features": "sqrt",
+        **current_tree_hyperparameters(fast)["Extra Trees"],
         "class_weight": "balanced",
         "random_state": SEED,
         "n_jobs": 1,
@@ -4320,9 +4865,7 @@ def extra_trees_hyperparameters(fast: bool) -> Dict[str, Any]:
 def gradient_boosting_hyperparameters(fast: bool) -> Dict[str, Any]:
     """Canonical Gradient Boosting hyperparameters for audit output."""
     return {
-        "n_estimators": 100 if fast else 300,
-        "max_depth": 4,
-        "learning_rate": 0.05,
+        **current_tree_hyperparameters(fast)["Gradient Boosting"],
         "subsample": 0.8,
         "random_state": SEED,
     }
@@ -4341,28 +4884,23 @@ def logistic_regression_hyperparameters() -> Dict[str, Any]:
 def lightgbm_hyperparameters(fast: bool) -> Dict[str, Any]:
     """LightGBM supplementary-comparison parameters."""
     return {
-        "n_estimators": 160 if fast else 500,
-        "max_depth": 5,
-        "learning_rate": 0.05 if fast else 0.03,
-        "num_leaves": 31 if fast else 63,
+        **current_tree_hyperparameters(fast)["LightGBM"],
         "subsample": 0.8,
         "colsample_bytree": 0.7,
         "scale_pos_weight_rule": SCALE_POS_WEIGHT_RULE,
         "random_state": SEED,
-        "n_jobs": -1,
+        "n_jobs": 1,
     }
 
 
 def catboost_hyperparameters(fast: bool) -> Dict[str, Any]:
     """CatBoost supplementary-comparison parameters."""
     return {
-        "iterations": 160 if fast else 500,
-        "depth": 5,
-        "learning_rate": 0.05 if fast else 0.03,
+        **current_tree_hyperparameters(fast)["CatBoost"],
         "scale_pos_weight_rule": SCALE_POS_WEIGHT_RULE,
         "random_seed": SEED,
         "allow_writing_files": False,
-        "thread_count": -1,
+        "thread_count": 1,
     }
 
 
@@ -4460,7 +4998,15 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
 
 def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> List[Dict[str, Any]]:
     """Record the actual validation protocol used by each analysis section."""
-    full_sections = ["main", "ratio", "go-count", "models", "ablation", "importance"]
+    full_sections = [
+        "main",
+        "ratio",
+        "go-count",
+        "models",
+        "tune",
+        "ablation",
+        "importance",
+    ]
     section_set = set(full_sections if "all" in sections else sections)
     cv_splits = 3 if args.quick else 5
     cv_repeats = 1 if args.quick else 3
@@ -4529,6 +5075,22 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
                 "output_table": "tables/model_comparison.csv",
             }
         )
+    if "tune" in section_set:
+        rows.append(
+            {
+                "analysis_name": "tree_hyperparameter_tuning",
+                "model": "; ".join(TREE_ENSEMBLE_COMPONENT_NAMES),
+                "run_mode": run_mode_from_args(args),
+                "model_comparison_protocol": TREE_TUNING_PROTOCOL,
+                "n_splits": cv_splits,
+                "n_repeats": cv_repeats,
+                "total_folds": cv_splits * cv_repeats,
+                "random_state": "42" if args.quick else "42;7;13",
+                "metric_reported": "outer-training-only CV AUROC/AUPRC/F1/precision/recall/Brier and runtime",
+                "error_term_type": "SD",
+                "output_table": "tables/tree_hyperparameter_tuning_summary.csv",
+            }
+        )
     if "ablation" in section_set:
         rows.append(
             {
@@ -4568,6 +5130,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
             "negative_ratio_sensitivity",
             "go_feature_count_sensitivity",
             "supplementary_model_comparison",
+            "tree_hyperparameter_tuning",
         }:
             row["feature_selection_protocol"] = f"{NESTED_GO_SELECTION_PROTOCOL}_for_cv"
             row["nested_feature_selection"] = True
@@ -4596,6 +5159,10 @@ def save_result_summary(
         "ratio_sensitivity.csv",
         "go_feature_count_cv_per_fold.csv",
         "go_feature_count_cv_summary.csv",
+        "tree_hyperparameter_tuning_per_fold.csv",
+        "tree_hyperparameter_tuning_summary.csv",
+        "tree_hyperparameter_selected.csv",
+        "tree_tuned_ensemble_cv.csv",
         "ablation.csv",
         "feature_importance.csv",
     ]:
@@ -4687,6 +5254,12 @@ def save_manifest(
 
     selected_go_sha256 = stable_json_sha256(context.selected_go)
     split_sha256 = primary_split_sha256(context)
+    tree_tuning_path = DATA_DIR / TREE_TUNING_SELECTED_NAME
+    tree_tuning_payload = (
+        json.loads(tree_tuning_path.read_text(encoding="utf-8"))
+        if tree_tuning_path.exists()
+        else {}
+    )
     manifest_args = dict(vars(args))
     manifest_args["raw_dir"] = project_relative_path(Path(args.raw_dir))
     manifest_args["out_dir"] = project_relative_path(Path(args.out_dir))
@@ -4727,6 +5300,7 @@ def save_manifest(
             "ratio_cv": "fold_train_only_for_variance_and_mutual_information",
             "go_feature_count_cv": "fold_train_only_for_variance_and_mutual_information",
             "model_comparison_cv": "fold_train_only_for_variance_and_mutual_information",
+            "tree_hyperparameter_tuning_cv": "fold_train_only_with_shared_fold_specific_go_representation",
             "frequency_prefilter": "label_free_full_go_background",
         },
         "jaccard_feature_protocol": jaccard_feature_protocol(),
@@ -4749,6 +5323,14 @@ def save_manifest(
         },
         "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
         "model_selection_outer_test_used": False,
+        "tree_hyperparameter_tuning_protocol": TREE_TUNING_PROTOCOL,
+        "tree_hyperparameter_tuning_outer_test_used": False,
+        "tree_hyperparameter_selection_rule": tree_tuning_payload.get(
+            "selection_rule", []
+        ),
+        "selected_tree_hyperparameters_sha256": tree_tuning_payload.get(
+            "selected_parameters_sha256"
+        ),
         "scale_pos_weight_rule": SCALE_POS_WEIGHT_RULE,
         "scale_pos_weight_summary": scale_pos_weight_summary(spw_rows),
         "sections_run": list(sections),
@@ -4792,6 +5374,7 @@ def save_manifest(
             f"{PRIMARY_MODEL_NAME} is the primary model for held-out evaluation and downstream analyses.",
             "The 12 base models are compared on shared outer-training CV folds; the six-tree ensemble is derived by averaging its component probabilities within those folds.",
             "Neither the base-model comparison nor the derived ensemble uses the outer test set during model selection.",
+            "Each tree component uses parameters selected by the declared training-only repeated-CV search; the outer test set is excluded from tuning.",
         ],
         "paper_output_map": {
             "heldout_primary_model_diagnostics": (
@@ -4821,6 +5404,15 @@ def save_manifest(
                 "figures/go_feature_count_cv_performance.png and "
                 "figures/go_feature_count_cv_runtime.png and "
                 "figures/go_feature_count_cv_runtime_zoomed.png"
+            ),
+            "tree_hyperparameter_tuning": (
+                "tables/tree_hyperparameter_tuning_per_fold.csv, "
+                "tables/tree_hyperparameter_tuning_summary.csv, "
+                "tables/tree_hyperparameter_selected.csv, "
+                "tables/tree_tuned_ensemble_cv.csv, "
+                f"data/{TREE_TUNING_SELECTED_NAME}, "
+                "data/tree_hyperparameter_tuning_manifest.json, and "
+                "figures/tree_hyperparameter_tuning.png"
             ),
             "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
             "feature_importance": (
@@ -5084,7 +5676,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         run_all_in_child_processes(args)
         return
     if (
-        "models" in args.sections
+        any(section in args.sections for section in ("models", "tune"))
         and len(args.sections) > 1
         and "all" not in args.sections
         and os.environ.get("PATHWAYML_CHILD") != "1"
@@ -5094,10 +5686,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     ensure_dirs()
     remove_obsolete_analysis_outputs()
+    activate_tree_hyperparameters(None)
     frozen_config_env = os.environ.get(SELECTION_CONFIG_ENV)
     if frozen_config_env and any(section in args.sections for section in FINAL_STAGE_SECTIONS):
         frozen_config_path = Path(frozen_config_env)
-        validate_frozen_selection_configuration(frozen_config_path, args)
+        frozen_payload = validate_frozen_selection_configuration(frozen_config_path, args)
+        activate_tree_hyperparameters(
+            frozen_payload["frozen_configuration"]["tree_hyperparameters"]
+        )
         print(
             f"Validated frozen selection configuration: {frozen_config_path}",
             flush=True,
@@ -5121,7 +5717,15 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     sections = args.sections
     if "all" in sections:
-        sections = ["main", "ratio", "go-count", "models", "ablation", "importance"]
+        sections = [
+            "main",
+            "ratio",
+            "go-count",
+            "models",
+            "tune",
+            "ablation",
+            "importance",
+        ]
 
     main_result = None
     if any(s in sections for s in ("main", "importance")):
@@ -5141,6 +5745,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
         print("Running model comparison ...", flush=True)
         run_model_comparison(bundle, context, fast=args.quick)
         gc.collect()
+    if "tune" in sections:
+        print("Running model-specific tree hyperparameter tuning ...", flush=True)
+        run_tree_hyperparameter_tuning(bundle, context, fast=args.quick)
+        gc.collect()
     if "ablation" in sections:
         print("Running feature ablation ...", flush=True)
         run_ablation(bundle, context, fast=args.quick)
@@ -5159,8 +5767,9 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
     """Run selection first, freeze it, then run the final analyses.
 
     Separate child processes avoid native-library conflicts.  The stage split
-    also ensures that training-only ratio, model, and feature-count evidence is
-    written and frozen before the held-out benchmark and downstream analyses.
+    also ensures that training-only ratio, model, feature-count, and parameter
+    evidence is written and frozen before the held-out benchmark and downstream
+    analyses.
     """
     configure_output_dir(args.out_dir)
     ensure_dirs()
@@ -5236,11 +5845,15 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
     context = prepare_primary_context(bundle, ratio=args.primary_ratio)
     save_primary_context_outputs(context, bundle.gene_go)
     save_processed_data(bundle, context)
+    frozen_payload = validate_frozen_selection_configuration(selection_config_path, args)
+    activate_tree_hyperparameters(
+        frozen_payload["frozen_configuration"]["tree_hyperparameters"]
+    )
     save_manifest(
         args,
         bundle,
         context,
-        ["main", "ratio", "go-count", "models", "ablation", "importance"],
+        ["main", "ratio", "go-count", "models", "tune", "ablation", "importance"],
     )
     save_old_vs_candidate_comparison(bundle, context)
     print(f"\nDone. Outputs written to {OUT_DIR}")
@@ -5276,6 +5889,7 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
         "NUMEXPR_NUM_THREADS",
     ):
         env[variable] = "1"
+    selection_config_path: Path | None = None
     for chunk in chunks:
         cmd = [
             sys.executable,
@@ -5295,6 +5909,13 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
             cmd.append("--quick")
         print(f"\n=== Running chunk: {' '.join(chunk)} ===", flush=True)
         subprocess.run(cmd, cwd=str(ROOT), env=env, check=True)
+        if (
+            final_sections
+            and set(SELECTION_STAGE_SECTIONS).issubset(selection_sections)
+            and chunk == [selection_sections[-1]]
+        ):
+            selection_config_path = freeze_selection_configuration(args)
+            env[SELECTION_CONFIG_ENV] = str(selection_config_path.resolve())
 
     bundle = load_cached_bundle() if args.dataset_source == "cached" else load_raw_bundle(Path(args.raw_dir))
     if args.dataset_source == "raw":
@@ -5302,6 +5923,11 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
     context = prepare_primary_context(bundle, ratio=args.primary_ratio)
     save_primary_context_outputs(context, bundle.gene_go)
     save_processed_data(bundle, context)
+    if selection_config_path is not None:
+        frozen_payload = validate_frozen_selection_configuration(selection_config_path, args)
+        activate_tree_hyperparameters(
+            frozen_payload["frozen_configuration"]["tree_hyperparameters"]
+        )
     save_manifest(args, bundle, context, sections)
     print(f"\nDone. Outputs written to {OUT_DIR}")
 
@@ -5339,7 +5965,16 @@ def parse_args() -> argparse.Namespace:
         "--sections",
         nargs="+",
         default=["all"],
-        choices=["all", "main", "ratio", "go-count", "models", "ablation", "importance"],
+        choices=[
+            "all",
+            "main",
+            "ratio",
+            "go-count",
+            "models",
+            "tune",
+            "ablation",
+            "importance",
+        ],
         help="Analyses to run.",
     )
     parser.add_argument("--quick", action="store_true", help="Use faster models/CV for fast validation runs.")
@@ -5353,7 +5988,10 @@ def parse_args() -> argparse.Namespace:
         and os.environ.get("PATHWAYML_CHILD") != "1"
     ):
         parser.error("Run --sections go-count separately so its outputs remain supplementary.")
-    if "go-count" in args.sections:
+    if "tune" in args.sections and "all" not in args.sections:
+        suffix = "_quick" if args.quick else ""
+        default_out = ROOT / f"generated_tree_hyperparameter_tuning{suffix}"
+    elif "go-count" in args.sections:
         suffix = "_quick" if args.quick else ""
         default_out = ROOT / f"generated_go_feature_count_sensitivity{suffix}"
     elif args.primary_ratio == DEFAULT_PRIMARY_RATIO:
@@ -5377,6 +6015,7 @@ def parse_args() -> argparse.Namespace:
                 args.quick
                 or args.primary_ratio != DEFAULT_PRIMARY_RATIO
                 or "go-count" in args.sections
+                or "tune" in args.sections
             )
         ):
             parser.error(

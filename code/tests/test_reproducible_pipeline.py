@@ -273,6 +273,59 @@ class ReproduciblePipelineTests(unittest.TestCase):
         self.assertEqual(len(factories), expected_count)
         self.assertTrue(set(pipeline.TREE_ENSEMBLE_COMPONENT_NAMES).issubset(factories))
 
+    def test_tree_tuning_grids_have_declared_sizes_and_include_defaults(self) -> None:
+        full_grid = pipeline.tree_hyperparameter_grid(fast=False)
+        quick_grid = pipeline.tree_hyperparameter_grid(fast=True)
+        defaults = pipeline.default_tree_hyperparameters(fast=False)
+        self.assertEqual(set(full_grid), set(pipeline.TREE_ENSEMBLE_COMPONENT_NAMES))
+        for model_name in pipeline.TREE_ENSEMBLE_COMPONENT_NAMES:
+            self.assertEqual(
+                len(full_grid[model_name]),
+                pipeline.TREE_TUNING_CONFIGS_PER_MODEL,
+            )
+            self.assertEqual(len(quick_grid[model_name]), 2)
+            self.assertIn(defaults[model_name], full_grid[model_name])
+
+    def test_tree_tuning_selection_rule_and_parameter_activation(self) -> None:
+        defaults = pipeline.default_tree_hyperparameters(fast=False)
+        rows = []
+        for model_name in pipeline.TREE_ENSEMBLE_COMPONENT_NAMES:
+            first = dict(defaults[model_name])
+            second = dict(defaults[model_name])
+            count_key = "iterations" if model_name == "CatBoost" else "n_estimators"
+            second[count_key] = int(second[count_key]) + 1
+            for config_id, parameters, auroc in [
+                ("candidate_a", first, 0.80),
+                ("candidate_b", second, 0.81),
+            ]:
+                rows.append(
+                    {
+                        "model": model_name,
+                        "config_id": config_id,
+                        "parameters_json": json.dumps(parameters, sort_keys=True),
+                        "status": "ok",
+                        "mean_auroc": auroc,
+                        "mean_auprc": 0.75,
+                        "mean_f1": 0.74,
+                        "sd_auroc": 0.02,
+                        "mean_elapsed_s": 0.1,
+                    }
+                )
+        selected, selected_rows = pipeline.select_tree_hyperparameters(rows)
+        self.assertEqual(len(selected_rows), len(pipeline.TREE_ENSEMBLE_COMPONENT_NAMES))
+        self.assertTrue(all(row["config_id"] == "candidate_b" for row in selected_rows))
+
+        try:
+            pipeline.activate_tree_hyperparameters(selected)
+            factories = pipeline.tree_model_factory_catalog(fast=False)
+            rf = factories["Random Forest"](1.0, pipeline.SEED)
+            self.assertEqual(
+                rf.get_params()["n_estimators"],
+                selected["Random Forest"]["n_estimators"],
+            )
+        finally:
+            pipeline.activate_tree_hyperparameters(None)
+
     def test_shap_background_is_deterministic_and_class_balanced(self) -> None:
         first = pipeline.select_shap_background_indices(self.context.y_train)
         second = pipeline.select_shap_background_indices(self.context.y_train)
@@ -294,13 +347,23 @@ class ReproduciblePipelineTests(unittest.TestCase):
     def test_frozen_selection_configuration_matches_formal_outputs(self) -> None:
         config_path = pipeline.ROOT / "generated" / "data" / pipeline.SELECTION_CONFIG_NAME
         self.assertTrue(config_path.exists())
+        raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+        if int(raw_config.get("schema_version", 1)) < 2:
+            self.skipTest("Formal outputs predate the tree-hyperparameter tuning stage.")
         args = type(
             "Args",
             (),
             {"primary_ratio": pipeline.DEFAULT_PRIMARY_RATIO, "quick": False},
         )()
         config = pipeline.validate_frozen_selection_configuration(config_path, args)
-        self.assertEqual(config["selection_stage_order"], ["ratio", "models", "go-count"])
+        self.assertEqual(
+            config["selection_stage_order"],
+            ["ratio", "models", "go-count", "tune"],
+        )
+        self.assertEqual(
+            set(config["frozen_configuration"]["tree_hyperparameters"]),
+            set(pipeline.TREE_ENSEMBLE_COMPONENT_NAMES),
+        )
         self.assertFalse(config["outer_test_used_for_selection"])
 
     def test_ratio_models_share_fold_samples_and_features(self) -> None:

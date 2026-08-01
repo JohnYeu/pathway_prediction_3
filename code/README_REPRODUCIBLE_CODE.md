@@ -25,6 +25,10 @@ The pipeline regenerates the main intermediate products under `generated/`:
 - six-tree soft-voting evidence: `tables/tree_ensemble_cv.csv`,
   `tables/tree_ensemble_cv_per_fold.csv`, and
   `data/primary_ensemble_manifest.json`
+- model-specific tree-parameter selection:
+  `tables/tree_hyperparameter_tuning_summary.csv`,
+  `tables/tree_hyperparameter_selected.csv`, and
+  `data/selected_tree_hyperparameters.json`
 - ablation study: `tables/ablation.csv`
 - ensemble SHAP feature importance: `tables/feature_importance.csv`,
   `tables/shap_component_additivity.csv`, and
@@ -42,6 +46,7 @@ after a completed full run has been reviewed:
 - `generated/figures/FigG_score_by_type.png`
 - `generated/figures/Fig8_methods.png`
 - `generated/figures/Fig_ablation.png`
+- `generated/figures/tree_hyperparameter_tuning.png`
 
 ## Data Source
 
@@ -75,10 +80,10 @@ collapsed before feature construction because ATH_GO_GOSLIM expands GO
 annotations across GO slim categories.
 
 For `--sections all`, the formal run has two stages. It first runs the
-training-only ratio, model, and GO feature-count comparisons. Their choices and
-file hashes are saved in `generated/data/frozen_selection_config.json`. The main
-held-out benchmark, ablation, and SHAP analyses run only after that configuration
-has been validated.
+training-only ratio, model, GO feature-count, and model-specific tree-parameter
+comparisons. Their choices and file hashes are saved in
+`generated/data/frozen_selection_config.json`. The main held-out benchmark,
+ablation, and SHAP analyses run only after that configuration has been validated.
 
 ## Evaluation Protocol
 
@@ -114,6 +119,14 @@ mutual-information selection on fold training. The 12 base classifiers use the
 same fold-specific representation in the model comparison, and the six-tree
 ensemble score is derived from the six component predictions. The outer test
 set is not used to choose a model or class ratio.
+
+After the ratio, model family, and 60-term representation are fixed, each of the
+six tree components is evaluated over a 12-configuration model-specific grid.
+All candidates reuse the same 15 training-only folds, negative samples, and
+fold-specific GO representations. One parameter set per component is selected
+by mean AUROC, followed by AUPRC, F1, AUROC stability, and a fixed configuration
+identifier for exact ties. Runtime is recorded but is not a selection criterion.
+The selected parameter sets are frozen before the outer test is evaluated.
 
 For interpretation, Tree SHAP is computed for each of the six components on a
 common outer-training background with probability output. Signed local
