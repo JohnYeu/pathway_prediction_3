@@ -1,6 +1,6 @@
 {
-  "command": "python3 code/reproducible_pipeline.py --full --sections all --out-dir generated",
-  "git_commit": "ae77cee55c6db46861a093c8018768f70c57bceb",
+  "command": "python3 code/reproducible_pipeline.py --dataset-source raw --raw-dir /Users/yuzhuoye/PathwayML-Ath_files3/code/raw_sources --out-dir /Users/yuzhuoye/PathwayML-Ath_files3/code/generated --primary-ratio 1 --sections all",
+  "git_commit": "9376e9ed8c38927f7c20bca455498326ab621b15",
   "hardware_profile": {
     "chip": "Apple M2 Pro",
     "core_layout": "proc 12:8:4:0",
@@ -70,7 +70,7 @@
       "size_bytes": 1506
     }
   ],
-  "timestamp_utc": "2026-07-29T18:36:12.857598+00:00",
+  "timestamp_utc": "2026-07-31T23:30:04.078602+00:00",
   "working_tree_dirty": true,
   "working_tree_dirty_scope": "source tree excluding code/generated* and the active output directory"
 }

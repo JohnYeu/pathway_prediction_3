@@ -20,10 +20,15 @@ The pipeline regenerates the main intermediate products under `generated/`:
   `tables/heldout_negative_type_performance.csv`
 - training-only nested ratio comparison: `tables/ratio_cv_per_fold.csv`,
   `tables/ratio_cv_summary.csv`, and `tables/ratio_cv_consensus_summary.csv`
-- training-only 13-method comparison: `tables/model_comparison.csv` and
+- training-only 12-method comparison: `tables/model_comparison.csv` and
   `tables/model_comparison_per_fold.csv`
+- six-tree soft-voting evidence: `tables/tree_ensemble_cv.csv`,
+  `tables/tree_ensemble_cv_per_fold.csv`, and
+  `data/primary_ensemble_manifest.json`
 - ablation study: `tables/ablation.csv`
-- feature importance: `tables/feature_importance.csv`
+- ensemble SHAP feature importance: `tables/feature_importance.csv`,
+  `tables/shap_component_additivity.csv`, and
+  `data/shap_ensemble_manifest.json`
 - split, negative-source, GO-selection, and CV audits under `tables/` and `data/`
 
 It also creates the analysis figures that can be synchronized with the manuscript
@@ -95,13 +100,26 @@ label-free background frequency filter
 -> top 60 GO terms
 ```
 
-Random Forest is the primary model. It uses the 60 terms selected from the
-complete outer-training side for one final held-out evaluation. Model-family
-comparison and ratio comparison are performed only inside outer training. The
-ratio comparison uses Logistic Regression, Random Forest, and XGBoost on the
-same folds, negative samples, and fold-selected GO terms. Each fold independently
-generates controls and repeats variance and mutual-information selection on fold
-training. The outer test set is not used to choose a model or class ratio.
+The primary model is an equal-weight soft-voting ensemble of Random Forest,
+Extra Trees, Gradient Boosting, XGBoost, LightGBM, and CatBoost. Each component
+uses the same 60-term representation and the final score is the arithmetic mean
+of the six positive-class probabilities. The comparison contains 12 base
+classifiers, while the primary ensemble contains the six tree components.
+
+Model-family comparison and ratio comparison are performed only inside outer
+training. The ratio comparison uses Logistic Regression, Random Forest, and
+XGBoost on the same folds, negative samples, and fold-selected GO terms. Each
+fold independently generates controls and repeats variance and
+mutual-information selection on fold training. The 12 base classifiers use the
+same fold-specific representation in the model comparison, and the six-tree
+ensemble score is derived from the six component predictions. The outer test
+set is not used to choose a model or class ratio.
+
+For interpretation, Tree SHAP is computed for each of the six components on a
+common outer-training background with probability output. Signed local
+attributions and base values are averaged across components before global mean
+absolute importance is calculated. Additivity is checked for every component
+and for the averaged ensemble explanation.
 
 An optional cached-data mode is available for comparison with archived inputs:
 

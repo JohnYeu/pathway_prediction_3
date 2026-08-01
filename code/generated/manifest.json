@@ -1,7 +1,7 @@
 {
   "args": {
     "dataset_source": "raw",
-    "full": true,
+    "full": false,
     "out_dir": "code/generated",
     "primary_ratio": 1,
     "quick": false,
@@ -23,8 +23,8 @@
     "ratio_cv": "fold_train_only_for_variance_and_mutual_information"
   },
   "formal_full_run": true,
-  "git_commit": "ae77cee55c6db46861a093c8018768f70c57bceb",
-  "go_selection_mode": "outer_train_fixed80_with_nested_ratio_cv",
+  "git_commit": "9376e9ed8c38927f7c20bca455498326ab621b15",
+  "go_selection_mode": "outer_train_fixed60_with_nested_ratio_cv",
   "hardware_profile": {
     "chip": "Apple M2 Pro",
     "core_layout": "proc 12:8:4:0",
@@ -64,6 +64,21 @@
         "thread_count": -1
       }
     },
+    "Extra Trees": {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "n_estimators": 500,
+      "n_jobs": 1,
+      "random_state": 42
+    },
+    "Gradient Boosting": {
+      "learning_rate": 0.05,
+      "max_depth": 4,
+      "n_estimators": 300,
+      "random_state": 42,
+      "subsample": 0.8
+    },
     "LightGBM": {
       "available": true,
       "parameters": {
@@ -92,6 +107,18 @@
       "n_jobs": 1,
       "random_state": 42
     },
+    "Six-tree soft-voting ensemble": {
+      "aggregation": "equal_weight_mean_positive_class_probability",
+      "component_weight": 0.16666666666666666,
+      "components": [
+        "Random Forest",
+        "Extra Trees",
+        "Gradient Boosting",
+        "XGBoost",
+        "LightGBM",
+        "CatBoost"
+      ]
+    },
     "XGBoost": {
       "colsample_bytree": 0.7,
       "eval_metric": "logloss",
@@ -111,34 +138,35 @@
   },
   "model_selection_outer_test_used": false,
   "n_engineered_features": 9,
-  "n_selected_go_terms": 80,
-  "n_total_features": 89,
+  "n_selected_go_terms": 60,
+  "n_total_features": 69,
   "negative_scheme": "four_type_random_shuffled_partial_cross",
   "negative_source_isolation": true,
   "notes": [
     "Raw mode rebuilds the dataset from the documented TAIR, KEGG, and PMN/AraCyc inputs.",
-    "The 80 GO terms are selected only from the primary outer-training records.",
-    "Ratio comparison repeats variance and mutual-information selection inside each fold training side.",
+    "The 60 GO terms are selected only from the primary outer-training records.",
+    "Ratio comparison uses shared folds for Logistic Regression, Random Forest, and XGBoost, with variance and mutual-information selection repeated inside each fold training side.",
     "Source-derived negative controls are generated independently on each split side.",
-    "Random Forest is the primary model for held-out evaluation and downstream analyses.",
-    "The 13-model comparison is confined to shared outer-training CV folds; it does not use the outer test set."
+    "Six-tree soft-voting ensemble is the primary model for held-out evaluation and downstream analyses.",
+    "The 12 base models are compared on shared outer-training CV folds; the six-tree ensemble is derived by averaging its component probabilities within those folds.",
+    "Neither the base-model comparison nor the derived ensemble uses the outer test set during model selection."
   ],
   "output_dir": "code/generated",
   "paper_output_map": {
     "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
     "cv_split_audit": "tables/cv_split_audit.csv and data/cv_fold_manifest.json",
     "dataset_statistics": "figures/Fig5_datastats.png and tables/dataset_summary.csv",
-    "feature_importance": "tables/table_top_features.csv and figures/Fig3_shap.png",
+    "feature_importance": "tables/table_top_features.csv, tables/shap_component_additivity.csv, tables/shap_component_feature_importance.csv, data/shap_ensemble_manifest.json, data/shap_ensemble_values.npz, and figures/Fig3_shap.png",
     "go_feature_count_sensitivity": "tables/go_feature_count_cv_per_fold.csv, tables/go_feature_count_cv_summary.csv, data/go_feature_count_cv_manifest.json, and figures/go_feature_count_cv_performance.png and figures/go_feature_count_cv_runtime.png and figures/go_feature_count_cv_runtime_zoomed.png",
     "go_selection_audit": "tables/go_selection_audit.csv",
     "heldout_primary_model_diagnostics": "tables/heldout_predictions.csv, tables/heldout_confusion_matrix.csv, tables/heldout_score_by_type.csv, tables/heldout_negative_type_performance.csv, figures/FigC_roc_pr.png, figures/FigF_confusion.png, and figures/FigG_score_by_type.png",
     "kegg_pathway_filter": "tables/kegg_pathway_filter_audit.csv and tables/kegg_pathway_filter_summary.json",
     "latex_fragments": "tables/latex/*.tex",
-    "method_comparison": "tables/table_method_comparison.csv and figures/Fig8_methods.png",
+    "method_comparison": "tables/table_method_comparison.csv, tables/tree_ensemble_cv.csv, tables/tree_ensemble_cv_per_fold.csv, and figures/Fig8_methods.png",
     "negative_metadata": "tables/negative_metadata.csv",
     "pathway_grouping": "data/pathway_source_records.json, data/pathway_gene_set_groups.json, and tables/pathway_grouping_summary.csv",
     "primary_split_audit": "tables/main_split_audit.csv and data/main_split.json",
-    "training_only_ratio_cv": "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, data/ratio_cv_manifest.json, and figures/Fig7_robustness.png"
+    "training_only_ratio_cv": "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, tables/ratio_cv_consensus_summary.csv, data/ratio_cv_manifest.json, and figures/Fig7_robustness.png"
   },
   "paper_result": true,
   "paper_text_synchronized": false,
@@ -155,14 +183,31 @@
     "source_record_kegg": 155
   },
   "preselected_primary_ratio": "1:1",
-  "primary_model": "Random Forest",
-  "primary_model_slug": "random_forest",
+  "primary_model": "Six-tree soft-voting ensemble",
+  "primary_model_component_weight": 0.16666666666666666,
+  "primary_model_components": [
+    "Random Forest",
+    "Extra Trees",
+    "Gradient Boosting",
+    "XGBoost",
+    "LightGBM",
+    "CatBoost"
+  ],
+  "primary_model_slug": "six_tree_soft_voting",
+  "primary_model_type": "equal_weight_probability_soft_voting",
   "primary_ratio": "1:1",
   "primary_split_sha256": "2c3c59b8cc5c7b23a557bc21e4a3aa2cc40925da6a6b4e78cc63c4b94624a390",
   "primary_split_stratification": "database_source",
   "primary_split_unit": "unique_exact_gene_set_group",
   "quick": false,
+  "ratio_cv_models": [
+    "Logistic Regression",
+    "Random Forest",
+    "XGBoost"
+  ],
   "ratio_cv_nested_feature_selection": true,
+  "ratio_cv_protocol": "shared_nested_cv_folds_across_representative_classifiers",
+  "ratio_cv_shared_folds_across_models": true,
   "raw_source_checksums": [
     {
       "expected_sha256": "c46ada08ea3d9d7cb35f6e175fc148b1c6cbd464883f2343c5c11c5981f77177",
@@ -224,7 +269,7 @@
       "small_gene_sets": "all annotated genes when |G*| <= 30"
     },
     "n_aracyc": 357,
-    "n_features": 89,
+    "n_features": 69,
     "n_go_annotated_genes": 28998,
     "n_go_annotated_pathway_genes": 7184,
     "n_group_aracyc_stratum": 357,
@@ -234,7 +279,7 @@
     "n_pathway_member_genes": 7333,
     "n_pathway_source_records": 538,
     "n_pathways": 512,
-    "n_selected_go": 80,
+    "n_selected_go": 60,
     "n_source_aracyc": 383,
     "n_source_kegg": 155,
     "n_test_positive": 103,
@@ -256,14 +301,14 @@
     },
     "positive_fraction_test": 0.5,
     "positive_fraction_train": 0.5,
-    "primary_model": "Random Forest",
+    "primary_model": "Six-tree soft-voting ensemble",
     "primary_ratio": "1:1",
     "primary_split_sha256": "2c3c59b8cc5c7b23a557bc21e4a3aa2cc40925da6a6b4e78cc63c4b94624a390",
     "scale_pos_weight_summary": {
       "max": 5.0,
-      "mean": 2.6666666666666665,
+      "mean": 2.25,
       "min": 1.0,
-      "n_records": 90,
+      "n_records": 120,
       "rule": "dynamic_n_negative_train_over_n_positive_train"
     },
     "sections_run": [
@@ -274,7 +319,7 @@
       "ablation",
       "importance"
     ],
-    "selected_go_sha256": "3a1d385c45db7e6828608173de2c05fa72184735f0c71d1c44791b62421d2d6e",
+    "selected_go_sha256": "d832338fd932d1c78547f031acb30cc4ab7ff678230ccb5e3420815818fc2437",
     "table_row_counts": {
       "ablation.csv": 7,
       "feature_importance.csv": 30,
@@ -285,7 +330,7 @@
       "heldout_predictions.csv": 206,
       "heldout_score_by_type.csv": 5,
       "main_benchmark.csv": 1,
-      "model_comparison.csv": 13,
+      "model_comparison.csv": 12,
       "ratio_sensitivity.csv": 5
     }
   },
@@ -294,9 +339,9 @@
   "scale_pos_weight_rule": "dynamic_n_negative_train_over_n_positive_train",
   "scale_pos_weight_summary": {
     "max": 5.0,
-    "mean": 2.6666666666666665,
+    "mean": 2.25,
     "min": 1.0,
-    "n_records": 90,
+    "n_records": 120,
     "rule": "dynamic_n_negative_train_over_n_positive_train"
   },
   "sections_run": [
@@ -307,7 +352,23 @@
     "ablation",
     "importance"
   ],
-  "selected_go_sha256": "3a1d385c45db7e6828608173de2c05fa72184735f0c71d1c44791b62421d2d6e",
+  "selected_go_sha256": "d832338fd932d1c78547f031acb30cc4ab7ff678230ccb5e3420815818fc2437",
+  "selection_configuration": {
+    "frozen_configuration": {
+      "n_go_terms": 60,
+      "n_total_features": 69,
+      "primary_model": "Six-tree soft-voting ensemble",
+      "primary_ratio": "1:1"
+    },
+    "path": "code/generated/data/frozen_selection_config.json",
+    "sha256": "c0a1fc16b268a3bcbb644251c537e7edfa7743390b98c83f7bfd2c7f695f360f",
+    "stage_order": [
+      "ratio",
+      "models",
+      "go-count"
+    ],
+    "status": "frozen_before_final_stage"
+  },
   "software_versions": {
     "catboost": "1.2.10",
     "lightgbm": "4.6.0",
@@ -331,7 +392,7 @@
     "test_negatives": 242,
     "train_negatives": 142
   },
-  "timestamp_utc": "2026-07-29T18:36:12.857598+00:00",
+  "timestamp_utc": "2026-07-31T23:30:04.078602+00:00",
   "working_tree_dirty": true,
   "working_tree_dirty_scope": "source tree excluding code/generated* and the active output directory"
 }

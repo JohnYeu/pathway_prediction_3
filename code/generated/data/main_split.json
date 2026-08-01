@@ -11,7 +11,7 @@
     },
     "primary_ratio": "1:1",
     "primary_split_sha256": "2c3c59b8cc5c7b23a557bc21e4a3aa2cc40925da6a6b4e78cc63c4b94624a390",
-    "selected_go_sha256": "3a1d385c45db7e6828608173de2c05fa72184735f0c71d1c44791b62421d2d6e",
+    "selected_go_sha256": "d832338fd932d1c78547f031acb30cc4ab7ff678230ccb5e3420815818fc2437",
     "split_seed": 42,
     "split_unit": "unique_exact_gene_set_group",
     "stratification": "database_source",

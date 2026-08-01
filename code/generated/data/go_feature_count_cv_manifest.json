@@ -2,7 +2,7 @@
   "all_candidate_differences_within_one_pooled_sd_of_reference": true,
   "automatic_selection_performed": false,
   "best_mean_auprc_go_count": 100,
-  "best_mean_auroc_go_count": 80,
+  "best_mean_auroc_go_count": 100,
   "best_mean_f1_go_count": 80,
   "candidate_go_counts": [
     20,
@@ -6239,10 +6239,10 @@
     }
   ],
   "frequency_filter_scope": "label-free full GO-annotated background",
-  "interpretation_note": "This is a sensitivity analysis of the primary 80-term representation. It reports paired fold differences and does not use the outer test set or automatically select a winner.",
-  "model": "Random Forest",
+  "interpretation_note": "This is a sensitivity analysis of the primary 60-term representation. It reports paired fold differences and does not use the outer test set or automatically select a winner.",
+  "model": "Six-tree soft-voting ensemble",
   "outer_test_used": false,
-  "preselected_go_count": 80,
+  "preselected_go_count": 60,
   "primary_ratio": "1:1",
   "protocol": "outer-training-only repeated stratified nested cross-validation",
   "variance_mi_scope": "fold training only"

@@ -1,43 +1,56 @@
 model,model_role,parameter,paper_full_value,quick_debug_value,actual_used_value,status,notes
-XGBoost,comparison,colsample_bytree,0.7,0.7,0.7,match,
-XGBoost,comparison,eval_metric,logloss,logloss,logloss,match,
-XGBoost,comparison,learning_rate,0.03,0.08,0.03,match,quick differs intentionally for fast validation runs
-XGBoost,comparison,max_depth,5,5,5,match,
-XGBoost,comparison,min_child_weight,3,3,3,match,
-XGBoost,comparison,n_estimators,500,40,500,match,quick differs intentionally for fast validation runs
-XGBoost,comparison,n_jobs,-1,-1,-1,match,
-XGBoost,comparison,objective,binary:logistic,binary:logistic,binary:logistic,match,
-XGBoost,comparison,random_state,42,42,42,match,
-XGBoost,comparison,reg_alpha,0.1,0.1,0.1,match,
-XGBoost,comparison,reg_lambda,1.0,1.0,1.0,match,
-XGBoost,comparison,scale_pos_weight_rule,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic,
-XGBoost,comparison,subsample,0.8,0.8,0.8,match,
-XGBoost,comparison,tree_method,hist,hist,hist,match,
-Random Forest,primary,class_weight,balanced,balanced,balanced,match,
-Random Forest,primary,max_depth,10,10,10,match,
-Random Forest,primary,max_features,sqrt,sqrt,sqrt,match,
-Random Forest,primary,n_estimators,500,120,500,match,quick differs intentionally for fast validation runs
-Random Forest,primary,n_jobs,1,1,1,match,
-Random Forest,primary,random_state,42,42,42,match,
+XGBoost,primary_component,colsample_bytree,0.7,0.7,0.7,match,
+XGBoost,primary_component,eval_metric,logloss,logloss,logloss,match,
+XGBoost,primary_component,learning_rate,0.03,0.08,0.03,match,quick differs intentionally for fast validation runs
+XGBoost,primary_component,max_depth,5,5,5,match,
+XGBoost,primary_component,min_child_weight,3,3,3,match,
+XGBoost,primary_component,n_estimators,500,40,500,match,quick differs intentionally for fast validation runs
+XGBoost,primary_component,n_jobs,-1,-1,-1,match,
+XGBoost,primary_component,objective,binary:logistic,binary:logistic,binary:logistic,match,
+XGBoost,primary_component,random_state,42,42,42,match,
+XGBoost,primary_component,reg_alpha,0.1,0.1,0.1,match,
+XGBoost,primary_component,reg_lambda,1.0,1.0,1.0,match,
+XGBoost,primary_component,scale_pos_weight_rule,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic,
+XGBoost,primary_component,subsample,0.8,0.8,0.8,match,
+XGBoost,primary_component,tree_method,hist,hist,hist,match,
+Random Forest,primary_component,class_weight,balanced,balanced,balanced,match,
+Random Forest,primary_component,max_depth,10,10,10,match,
+Random Forest,primary_component,max_features,sqrt,sqrt,sqrt,match,
+Random Forest,primary_component,n_estimators,500,120,500,match,quick differs intentionally for fast validation runs
+Random Forest,primary_component,n_jobs,1,1,1,match,
+Random Forest,primary_component,random_state,42,42,42,match,
+Extra Trees,primary_component,class_weight,balanced,balanced,balanced,match,
+Extra Trees,primary_component,max_depth,10,10,10,match,
+Extra Trees,primary_component,max_features,sqrt,sqrt,sqrt,match,
+Extra Trees,primary_component,n_estimators,500,120,500,match,quick differs intentionally for fast validation runs
+Extra Trees,primary_component,n_jobs,1,1,1,match,
+Extra Trees,primary_component,random_state,42,42,42,match,
+Gradient Boosting,primary_component,learning_rate,0.05,0.05,0.05,match,
+Gradient Boosting,primary_component,max_depth,4,4,4,match,
+Gradient Boosting,primary_component,n_estimators,300,100,300,match,quick differs intentionally for fast validation runs
+Gradient Boosting,primary_component,random_state,42,42,42,match,
+Gradient Boosting,primary_component,subsample,0.8,0.8,0.8,match,
 Logistic Regression,comparison,class_weight,balanced,balanced,balanced,match,
 Logistic Regression,comparison,max_iter,5000,5000,5000,match,
 Logistic Regression,comparison,random_state,42,42,42,match,
 Logistic Regression,comparison,solver,lbfgs,lbfgs,lbfgs,match,
-LightGBM,comparison,colsample_bytree,0.7,0.7,0.7,match,
-LightGBM,comparison,learning_rate,0.03,0.05,0.03,match,quick differs intentionally for fast validation runs
-LightGBM,comparison,max_depth,5,5,5,match,
-LightGBM,comparison,n_estimators,500,160,500,match,quick differs intentionally for fast validation runs
-LightGBM,comparison,n_jobs,-1,-1,-1,match,
-LightGBM,comparison,num_leaves,63,31,63,match,quick differs intentionally for fast validation runs
-LightGBM,comparison,random_state,42,42,42,match,
-LightGBM,comparison,scale_pos_weight_rule,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic,
-LightGBM,comparison,subsample,0.8,0.8,0.8,match,
-CatBoost,comparison,allow_writing_files,False,False,False,match,
-CatBoost,comparison,depth,5,5,5,match,
-CatBoost,comparison,iterations,500,160,500,match,quick differs intentionally for fast validation runs
-CatBoost,comparison,learning_rate,0.03,0.05,0.03,match,quick differs intentionally for fast validation runs
-CatBoost,comparison,random_seed,42,42,42,match,
-CatBoost,comparison,scale_pos_weight_rule,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic,
-CatBoost,comparison,thread_count,-1,-1,-1,match,
-LightGBM,comparison,availability,optional_dependency,optional_dependency,installed,match,supplementary model comparison only
-CatBoost,comparison,availability,optional_dependency,optional_dependency,installed,match,supplementary model comparison only
+LightGBM,primary_component,colsample_bytree,0.7,0.7,0.7,match,
+LightGBM,primary_component,learning_rate,0.03,0.05,0.03,match,quick differs intentionally for fast validation runs
+LightGBM,primary_component,max_depth,5,5,5,match,
+LightGBM,primary_component,n_estimators,500,160,500,match,quick differs intentionally for fast validation runs
+LightGBM,primary_component,n_jobs,-1,-1,-1,match,
+LightGBM,primary_component,num_leaves,63,31,63,match,quick differs intentionally for fast validation runs
+LightGBM,primary_component,random_state,42,42,42,match,
+LightGBM,primary_component,scale_pos_weight_rule,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic,
+LightGBM,primary_component,subsample,0.8,0.8,0.8,match,
+CatBoost,primary_component,allow_writing_files,False,False,False,match,
+CatBoost,primary_component,depth,5,5,5,match,
+CatBoost,primary_component,iterations,500,160,500,match,quick differs intentionally for fast validation runs
+CatBoost,primary_component,learning_rate,0.03,0.05,0.03,match,quick differs intentionally for fast validation runs
+CatBoost,primary_component,random_seed,42,42,42,match,
+CatBoost,primary_component,scale_pos_weight_rule,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic_n_negative_train_over_n_positive_train,dynamic,
+CatBoost,primary_component,thread_count,-1,-1,-1,match,
+LightGBM,primary_component,availability,optional_dependency,optional_dependency,installed,match,required by the primary six-tree ensemble
+CatBoost,primary_component,availability,optional_dependency,optional_dependency,installed,match,required by the primary six-tree ensemble
+Six-tree soft-voting ensemble,primary,components,Random Forest;Extra Trees;Gradient Boosting;XGBoost;LightGBM;CatBoost,Random Forest;Extra Trees;Gradient Boosting;XGBoost;LightGBM;CatBoost,Random Forest;Extra Trees;Gradient Boosting;XGBoost;LightGBM;CatBoost,match,six independently fitted tree classifiers
+Six-tree soft-voting ensemble,primary,aggregation,equal_weight_mean_positive_class_probability,equal_weight_mean_positive_class_probability,equal_weight_mean_positive_class_probability,match,each component has weight 1/6

@@ -1,16 +1,26 @@
 \begin{table}[htbp]
 \centering
-\caption{Training-only nested cross-validation across positive-to-negative ratios.}
+\caption{Training-only nested ratio comparison across representative classifiers.}
 \label{tab:robustness_recomputed}
-\begin{tabular}{lrrrrrr}
+\begin{tabular}{llrrrrrr}
 \toprule
-Ratio & Folds & AUROC & AUROC SD & Normalized AUPRC & AUPRC SD & F1 \\
+Model & Ratio & Folds & AUROC & AUROC SD & Normalized AUPRC & AUPRC SD & F1 \\
 \midrule
-1:1 & 15 & 0.844 & 0.014 & 0.602 & 0.046 & 0.803 \\
-1:2 & 15 & 0.830 & 0.014 & 0.480 & 0.047 & 0.677 \\
-1:3 & 15 & 0.833 & 0.014 & 0.413 & 0.056 & 0.594 \\
-1:4 & 15 & 0.833 & 0.013 & 0.363 & 0.042 & 0.537 \\
-1:5 & 15 & 0.830 & 0.010 & 0.309 & 0.044 & 0.488 \\
+Logistic Regression & 1:1 & 15 & 0.803 & 0.028 & 0.518 & 0.090 & 0.751 \\
+Logistic Regression & 1:2 & 15 & 0.809 & 0.018 & 0.448 & 0.052 & 0.659 \\
+Logistic Regression & 1:3 & 15 & 0.803 & 0.012 & 0.379 & 0.031 & 0.579 \\
+Logistic Regression & 1:4 & 15 & 0.813 & 0.012 & 0.345 & 0.039 & 0.530 \\
+Logistic Regression & 1:5 & 15 & 0.813 & 0.016 & 0.308 & 0.046 & 0.483 \\
+Random Forest & 1:1 & 15 & 0.844 & 0.013 & 0.599 & 0.043 & 0.800 \\
+Random Forest & 1:2 & 15 & 0.829 & 0.013 & 0.468 & 0.042 & 0.670 \\
+Random Forest & 1:3 & 15 & 0.833 & 0.013 & 0.409 & 0.050 & 0.600 \\
+Random Forest & 1:4 & 15 & 0.833 & 0.013 & 0.360 & 0.039 & 0.541 \\
+Random Forest & 1:5 & 15 & 0.831 & 0.011 & 0.313 & 0.050 & 0.490 \\
+XGBoost & 1:1 & 15 & 0.838 & 0.023 & 0.561 & 0.074 & 0.786 \\
+XGBoost & 1:2 & 15 & 0.825 & 0.015 & 0.447 & 0.054 & 0.657 \\
+XGBoost & 1:3 & 15 & 0.841 & 0.019 & 0.429 & 0.058 & 0.601 \\
+XGBoost & 1:4 & 15 & 0.845 & 0.014 & 0.380 & 0.056 & 0.557 \\
+XGBoost & 1:5 & 15 & 0.844 & 0.007 & 0.343 & 0.042 & 0.505 \\
 \bottomrule
 \end{tabular}
 

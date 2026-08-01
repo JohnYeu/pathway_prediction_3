@@ -1,0 +1,10 @@
+Paper items to synchronize only after candidate approval:
+- Primary-model name, six component models, soft-voting rule, rationale, methods, and hyperparameters.
+- The 12-model comparison and the six-component primary ensemble.
+- Probability-scale Tree SHAP protocol and averaged ensemble attributions.
+- Model comparison protocol (training-only repeated CV; outer test excluded from model selection).
+- Selected GO count, total feature dimension, and feature-selection wording.
+- Outer train/test sample counts and class prevalence.
+- Main benchmark, confusion matrix, score-by-negative-type, and model-comparison metrics.
+- Ratio table and figure, including normalized-AUPRC caveat.
+- Ablation and feature-importance results.

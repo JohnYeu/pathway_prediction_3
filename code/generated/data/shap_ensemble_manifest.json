@@ -1,0 +1,26 @@
+{
+  "additivity_atol": 0.01,
+  "additivity_rtol": 0.01,
+  "background_indices_sha256": "cce04b27ce81d6c023c2e51becb1314bbee31eeebbbaea4fd36794ee63652a48",
+  "background_seed": 42,
+  "background_size": 100,
+  "common_background_sampling": "deterministic_class_balanced_without_replacement",
+  "common_background_source": "outer_training_only",
+  "component_weight": 0.16666666666666666,
+  "components": [
+    "Random Forest",
+    "Extra Trees",
+    "Gradient Boosting",
+    "XGBoost",
+    "LightGBM",
+    "CatBoost"
+  ],
+  "ensemble_base_value": 0.5263202435394567,
+  "ensemble_max_abs_additivity_error": 0.0010784292177223737,
+  "feature_perturbation": "interventional",
+  "global_importance": "mean_absolute_value_of_averaged_local_attributions",
+  "local_value_aggregation": "signed_arithmetic_mean_across_components",
+  "model_output": "probability",
+  "n_explained": 206,
+  "protocol": "mean_signed_probability_tree_shap_six_tree_ensemble"
+}

@@ -1,0 +1,64 @@
+{
+  "evidence_file_sha256": {
+    "code/generated/tables/go_feature_count_cv_summary.csv": "cf9effafd5265a44f514766cf8c8beee9c48b74e2067abd691e70c3d79ff37b7",
+    "code/generated/tables/model_comparison.csv": "31d654163fe09f532445200afc7eb631c21077c45829232ea86e11e43fe39be9",
+    "code/generated/tables/ratio_cv_consensus_summary.csv": "67bd3e98c1ac8ead00768853a52c9442c0eddc6cb1f24178151d616823b51e26",
+    "code/generated/tables/tree_ensemble_cv.csv": "1347e6b67a5b29030667d12908f0247efbfe13f5c3c9b23b72ad02d1d7a95c47"
+  },
+  "final_stage_order": [
+    "main",
+    "ablation",
+    "importance"
+  ],
+  "frozen_configuration": {
+    "n_go_terms": 60,
+    "n_total_features": 69,
+    "primary_model": "Six-tree soft-voting ensemble",
+    "primary_ratio": "1:1"
+  },
+  "outer_test_used_for_selection": false,
+  "run_mode": "full",
+  "schema_version": 1,
+  "selection_stage_order": [
+    "ratio",
+    "models",
+    "go-count"
+  ],
+  "status": "frozen_before_final_stage",
+  "training_only_evidence": {
+    "go_feature_count": {
+      "largest_additional_auroc_from_larger_counts": 0.003843035854159793,
+      "largest_standardized_gain_from_larger_counts": {
+        "auprc": 0.2299794993905608,
+        "auroc": 0.1859312892258525,
+        "f1": 0.181937364123756
+      },
+      "pooled_sd_tolerance": 0.25,
+      "retained_count": 60,
+      "retained_mean_auroc": 0.8447289614754356,
+      "supports_compact_retained_count": true
+    },
+    "model": {
+      "ensemble_components": [
+        "Random Forest",
+        "Extra Trees",
+        "Gradient Boosting",
+        "XGBoost",
+        "LightGBM",
+        "CatBoost"
+      ],
+      "ensemble_mean_auroc": 0.8447289614754356,
+      "ensemble_model": "Six-tree soft-voting ensemble",
+      "ensemble_sd_auroc": 0.0218358253066307,
+      "highest_base_mean_auroc": 0.8439610932627778,
+      "highest_base_sd_auroc": 0.0133117487847099,
+      "highest_mean_auroc_base_model": "Random Forest",
+      "supports_frozen_model": true
+    },
+    "ratio": {
+      "best_mean_f1_ratio": "1:1",
+      "best_mean_normalized_auprc_ratio": "1:1",
+      "supports_frozen_ratio": true
+    }
+  }
+}

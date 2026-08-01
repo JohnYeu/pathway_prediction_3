@@ -1,0 +1,15 @@
+{
+  "aggregation": "equal_weight_mean_positive_class_probability",
+  "component_weight": 0.16666666666666666,
+  "components": [
+    "Random Forest",
+    "Extra Trees",
+    "Gradient Boosting",
+    "XGBoost",
+    "LightGBM",
+    "CatBoost"
+  ],
+  "model": "Six-tree soft-voting ensemble",
+  "n_components": 6,
+  "score_reconstruction_max_abs_error": 0.0
+}

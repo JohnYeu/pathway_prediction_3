@@ -1,0 +1,7 @@
+model,model_output,feature_perturbation,n_background,n_explained,expected_value,max_abs_additivity_error,additivity_atol,additivity_rtol
+Random Forest,probability,interventional,100,206,0.5284432840510057,0.0020014390270766125,0.01,0.01
+Extra Trees,probability,interventional,100,206,0.529723217055557,1.106926750260584e-08,0.01,0.01
+Gradient Boosting,probability,interventional,100,206,0.522392786795238,7.652435018989934e-09,0.01,0.01
+XGBoost,probability,interventional,100,206,0.5270802368213487,2.108959943347699e-07,0.01,0.01
+LightGBM,probability,interventional,100,206,0.5208401894689534,0.0064691699552673855,0.01,0.01
+CatBoost,probability,interventional,100,206,0.5294417470446373,8.249261614079462e-09,0.01,0.01

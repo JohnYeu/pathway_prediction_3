@@ -20,10 +20,10 @@ To compile the paper, run LaTeX from the manuscript folder:
 
 ```bash
 cd latex
-pdflatex main.tex
-bibtex main
-pdflatex main.tex
-pdflatex main.tex
+pdflatex main_tru.tex
+bibtex main_tru
+pdflatex main_tru.tex
+pdflatex main_tru.tex
 ```
 
 The manuscript reports the current generated results. For manual verification,

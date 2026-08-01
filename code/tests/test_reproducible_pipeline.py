@@ -72,7 +72,10 @@ class ReproduciblePipelineTests(unittest.TestCase):
             self.assertFalse(retired_keys & set(record))
 
     def test_training_selection_has_fixed_dimension(self) -> None:
-        self.assertEqual(pipeline.PRIMARY_MODEL_NAME, "Random Forest")
+        self.assertEqual(
+            pipeline.PRIMARY_MODEL_NAME,
+            "Six-tree soft-voting ensemble",
+        )
         self.assertEqual(len(self.context.selected_go), pipeline.N_GO_TERMS)
         self.assertEqual(len(self.context.feature_names), pipeline.N_TOTAL_FEATURES)
         self.assertEqual(self.context.feature_selection_stages["mi_select"], pipeline.N_GO_TERMS)
@@ -239,30 +242,54 @@ class ReproduciblePipelineTests(unittest.TestCase):
         )
         self.assertTrue(np.array_equal(forward, reverse))
 
-    def test_random_forest_fold_predictions_are_deterministic(self) -> None:
+    def test_six_tree_ensemble_is_deterministic_and_averages_probabilities(self) -> None:
         fold = pipeline.build_cv_fold_datasets(
             self.bundle,
             self.context,
             ratio=1,
             fast=True,
-            analysis_name="test_rf_determinism",
+            analysis_name="test_six_tree_determinism",
         )[0]
         predictions = []
         for _ in range(2):
             model = pipeline.primary_model(fast=True, random_state=fold.model_seed)
             model.fit(fold.X_train, fold.y_train)
-            predictions.append(pipeline.predict_scores(model, fold.X_validation))
+            ensemble_scores = pipeline.predict_scores(model, fold.X_validation)
+            component_mean = np.mean(
+                [
+                    pipeline.predict_scores(component, fold.X_validation)
+                    for component in model.component_models_.values()
+                ],
+                axis=0,
+            )
+            self.assertTrue(np.allclose(ensemble_scores, component_mean, atol=1e-12, rtol=0.0))
+            predictions.append(ensemble_scores)
         self.assertTrue(np.array_equal(predictions[0], predictions[1]))
 
-    def test_model_comparison_catalog_includes_primary_model(self) -> None:
+    def test_model_comparison_catalog_has_12_base_models(self) -> None:
         factories = pipeline.model_factory_catalog(fast=True)
-        self.assertIn(pipeline.PRIMARY_MODEL_NAME, factories)
-        expected_count = 11 + int(pipeline.lgb is not None) + int(pipeline.cb is not None)
+        self.assertNotIn(pipeline.PRIMARY_MODEL_NAME, factories)
+        expected_count = 10 + int(pipeline.lgb is not None) + int(pipeline.cb is not None)
         self.assertEqual(len(factories), expected_count)
-        model = factories[pipeline.PRIMARY_MODEL_NAME](1.0, pipeline.SEED)
-        self.assertEqual(model.n_estimators, 120)
-        self.assertEqual(model.max_depth, 10)
-        self.assertEqual(model.class_weight, "balanced")
+        self.assertTrue(set(pipeline.TREE_ENSEMBLE_COMPONENT_NAMES).issubset(factories))
+
+    def test_shap_background_is_deterministic_and_class_balanced(self) -> None:
+        first = pipeline.select_shap_background_indices(self.context.y_train)
+        second = pipeline.select_shap_background_indices(self.context.y_train)
+        self.assertTrue(np.array_equal(first, second))
+        labels = self.context.y_train[first]
+        self.assertEqual(len(first), pipeline.SHAP_BACKGROUND_SIZE)
+        self.assertEqual(int((labels == 1).sum()), int((labels == 0).sum()))
+
+    def test_shap_additivity_uses_treeexplainer_tolerance(self) -> None:
+        predicted = np.array([0.2, 0.8])
+        accepted = predicted + np.array([0.005, -0.005])
+        self.assertAlmostEqual(
+            pipeline.shap_additivity_error(accepted, predicted),
+            0.005,
+        )
+        with self.assertRaises(AssertionError):
+            pipeline.shap_additivity_error(predicted + 0.03, predicted)
 
     def test_frozen_selection_configuration_matches_formal_outputs(self) -> None:
         config_path = pipeline.ROOT / "generated" / "data" / pipeline.SELECTION_CONFIG_NAME

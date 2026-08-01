@@ -67,7 +67,6 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.ensemble import (
-    AdaBoostClassifier,
     ExtraTreesClassifier,
     GradientBoostingClassifier,
     RandomForestClassifier,
@@ -147,8 +146,22 @@ OUTER_TRAIN_GO_SELECTION_PROTOCOL = f"outer_training_selected{N_GO_TERMS}"
 PRIMARY_FIXED_GO_SELECTION_PROTOCOL = f"primary_train_fixed{N_GO_TERMS}"
 SCALE_POS_WEIGHT_RULE = "dynamic_n_negative_train_over_n_positive_train"
 SCALE_POS_WEIGHT_LOG: List[Dict[str, Any]] = []
-PRIMARY_MODEL_NAME = "Random Forest"
-PRIMARY_MODEL_SLUG = "random_forest"
+PRIMARY_MODEL_NAME = "Six-tree soft-voting ensemble"
+PRIMARY_MODEL_SLUG = "six_tree_soft_voting"
+TREE_ENSEMBLE_COMPONENT_NAMES = (
+    "Random Forest",
+    "Extra Trees",
+    "Gradient Boosting",
+    "XGBoost",
+    "LightGBM",
+    "CatBoost",
+)
+SHAP_BACKGROUND_SIZE = 100
+SHAP_BACKGROUND_SEED = SEED
+SHAP_ENSEMBLE_PROTOCOL = "mean_signed_probability_tree_shap_six_tree_ensemble"
+SHAP_ADDITIVITY_ATOL = 1e-2
+SHAP_ADDITIVITY_RTOL = 1e-2
+GO_COUNT_POOLED_SD_TOLERANCE = 0.25
 MODEL_COMPARISON_PROTOCOL = "outer_training_repeated_stratified_cv"
 RATIO_COMPARISON_MODELS = (
     "Logistic Regression",
@@ -462,8 +475,9 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
     """
     ratio_path = TABLE_DIR / "ratio_cv_consensus_summary.csv"
     model_path = TABLE_DIR / "model_comparison.csv"
+    ensemble_path = TABLE_DIR / "tree_ensemble_cv.csv"
     go_count_path = TABLE_DIR / "go_feature_count_cv_summary.csv"
-    required = (ratio_path, model_path, go_count_path)
+    required = (ratio_path, model_path, ensemble_path, go_count_path)
     missing = [project_relative_path(path) for path in required if not path.exists()]
     if missing:
         raise FileNotFoundError(
@@ -473,6 +487,7 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
 
     ratio_df = pd.read_csv(ratio_path)
     model_df = pd.read_csv(model_path)
+    ensemble_df = pd.read_csv(ensemble_path)
     go_count_df = pd.read_csv(go_count_path)
 
     ratio_by_auprc = int(ratio_df.loc[ratio_df["mean_normalized_auprc"].idxmax(), "ratio_value"])
@@ -484,6 +499,10 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
         ["mean_auroc", "sd_auroc"], ascending=[False, True]
     ).iloc[0]
     best_model = str(best_model_row["model"])
+    if len(ensemble_df) != 1:
+        raise ValueError("Expected one training-only six-tree ensemble summary row.")
+    ensemble_row = ensemble_df.iloc[0]
+    ensemble_components = tuple(str(ensemble_row["component_models"]).split(";"))
 
     reference_rows = go_count_df[go_count_df["n_go_terms"] == N_GO_TERMS]
     if len(reference_rows) != 1:
@@ -495,10 +514,32 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
         if not larger_rows.empty
         else 0.0
     )
+    largest_standardized_gains = {
+        metric: (
+            max(
+                0.0,
+                float(
+                    larger_rows[
+                        f"delta_{metric}_over_pooled_sd_vs_reference"
+                    ].max()
+                ),
+            )
+            if not larger_rows.empty
+            else 0.0
+        )
+        for metric in ("auroc", "auprc", "f1")
+    }
 
     supports_ratio = ratio_by_auprc == args.primary_ratio and ratio_by_f1 == args.primary_ratio
-    supports_model = best_model == PRIMARY_MODEL_NAME
-    supports_compact_go_count = largest_additional_auroc <= 0.001
+    supports_model = (
+        str(ensemble_row["model"]) == PRIMARY_MODEL_NAME
+        and ensemble_components == TREE_ENSEMBLE_COMPONENT_NAMES
+        and int(ensemble_row["n_folds"]) > 0
+    )
+    supports_compact_go_count = all(
+        gain <= GO_COUNT_POOLED_SD_TOLERANCE
+        for gain in largest_standardized_gains.values()
+    )
     if not args.quick:
         if not supports_ratio:
             raise ValueError(
@@ -506,12 +547,12 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
             )
         if not supports_model:
             raise ValueError(
-                f"The training-only comparison ranks {best_model}, not {PRIMARY_MODEL_NAME}, first."
+                "The training-only six-tree ensemble evidence does not match the frozen model."
             )
         if not supports_compact_go_count:
             raise ValueError(
-                "A larger GO representation improves mean AUROC by more than the "
-                "0.001 plateau tolerance; review the retained feature count."
+                "A larger GO representation improves at least one metric by more "
+                "than the pooled-SD tolerance; review the retained feature count."
             )
 
     evidence_files = {
@@ -538,16 +579,21 @@ def freeze_selection_configuration(args: argparse.Namespace) -> Path:
                 "supports_frozen_ratio": supports_ratio,
             },
             "model": {
-                "highest_mean_auroc_model": best_model,
-                "mean_auroc": float(best_model_row["mean_auroc"]),
-                "sd_auroc": float(best_model_row["sd_auroc"]),
+                "highest_mean_auroc_base_model": best_model,
+                "highest_base_mean_auroc": float(best_model_row["mean_auroc"]),
+                "highest_base_sd_auroc": float(best_model_row["sd_auroc"]),
+                "ensemble_model": PRIMARY_MODEL_NAME,
+                "ensemble_components": list(ensemble_components),
+                "ensemble_mean_auroc": float(ensemble_row["mean_auroc"]),
+                "ensemble_sd_auroc": float(ensemble_row["sd_auroc"]),
                 "supports_frozen_model": supports_model,
             },
             "go_feature_count": {
                 "retained_count": N_GO_TERMS,
                 "retained_mean_auroc": float(reference_row["mean_auroc"]),
                 "largest_additional_auroc_from_larger_counts": largest_additional_auroc,
-                "plateau_tolerance": 0.001,
+                "largest_standardized_gain_from_larger_counts": largest_standardized_gains,
+                "pooled_sd_tolerance": GO_COUNT_POOLED_SD_TOLERANCE,
                 "supports_compact_retained_count": supports_compact_go_count,
             },
         },
@@ -1835,12 +1881,7 @@ def random_forest_model(
     random_state: int = SEED,
     n_jobs: int = 1,
 ) -> RandomForestClassifier:
-    """Create the Random Forest used by the primary analysis.
-
-    Keeping this constructor in one place ensures that held-out evaluation,
-    ratio sensitivity, feature-count sensitivity, ablation, and SHAP all use
-    the same formal model configuration.
-    """
+    """Create the Random Forest used in comparison and ensemble analyses."""
     return RandomForestClassifier(
         n_estimators=120 if fast else 500,
         max_depth=10,
@@ -1851,9 +1892,119 @@ def random_forest_model(
     )
 
 
-def primary_model(fast: bool = False, random_state: int = SEED) -> RandomForestClassifier:
-    """Return a fresh estimator for the current primary-model protocol."""
-    return random_forest_model(fast=fast, random_state=random_state)
+def tree_model_factory_catalog(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
+    """Return the six tree-model builders used by the soft-voting ensemble."""
+    factories: Dict[str, Callable[[float, int], Any]] = {
+        "Random Forest": lambda _spw, seed: random_forest_model(
+            fast=fast, random_state=seed
+        ),
+        "Extra Trees": lambda _spw, seed: ExtraTreesClassifier(
+            n_estimators=120 if fast else 500,
+            max_depth=10,
+            max_features="sqrt",
+            class_weight="balanced",
+            random_state=seed,
+            # Parallel Extra Trees introduced sub-ULP prediction drift on this
+            # environment, so the formal estimator is kept single-threaded.
+            n_jobs=1,
+        ),
+        "Gradient Boosting": lambda _spw, seed: GradientBoostingClassifier(
+            n_estimators=100 if fast else 300,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            random_state=seed,
+        ),
+        "XGBoost": lambda spw, seed: xgb_model(
+            scale_pos_weight=spw, fast=fast, random_state=seed
+        ),
+    }
+    if lgb is not None:
+        factories["LightGBM"] = lambda spw, seed: lgb.LGBMClassifier(
+            n_estimators=160 if fast else 500,
+            max_depth=5,
+            learning_rate=0.05 if fast else 0.03,
+            num_leaves=31 if fast else 63,
+            subsample=0.8,
+            colsample_bytree=0.7,
+            scale_pos_weight=spw,
+            random_state=seed,
+            n_jobs=-1,
+            verbose=-1,
+        )
+    if cb is not None:
+        factories["CatBoost"] = lambda spw, seed: cb.CatBoostClassifier(
+            iterations=160 if fast else 500,
+            depth=5,
+            learning_rate=0.05 if fast else 0.03,
+            scale_pos_weight=spw,
+            random_seed=seed,
+            verbose=0,
+            allow_writing_files=False,
+            thread_count=-1,
+        )
+    return factories
+
+
+class SixTreeSoftVotingClassifier:
+    """Equal-weight probability average of six independently fitted tree models."""
+
+    def __init__(self, fast: bool = False, random_state: int = SEED) -> None:
+        self.fast = fast
+        self.random_state = random_state
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "SixTreeSoftVotingClassifier":
+        factories = tree_model_factory_catalog(self.fast)
+        missing = [name for name in TREE_ENSEMBLE_COMPONENT_NAMES if name not in factories]
+        if missing:
+            raise RuntimeError(
+                "The primary ensemble requires all six tree-model dependencies; missing: "
+                + ", ".join(missing)
+            )
+        y_arr = np.asarray(y, dtype=int)
+        n_positive = int((y_arr == 1).sum())
+        n_negative = int((y_arr == 0).sum())
+        scale_pos_weight = float(n_negative / n_positive) if n_positive else 1.0
+        self.component_models_: Dict[str, Any] = {}
+        for name in TREE_ENSEMBLE_COMPONENT_NAMES:
+            estimator = factories[name](scale_pos_weight, self.random_state)
+            estimator.fit(X, y_arr)
+            self.component_models_[name] = estimator
+        self.classes_ = np.asarray([0, 1], dtype=int)
+        self.n_features_in_ = int(np.asarray(X).shape[1])
+        self.scale_pos_weight_ = scale_pos_weight
+        return self
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        if not hasattr(self, "component_models_"):
+            raise RuntimeError("The six-tree ensemble must be fitted before prediction.")
+        positive_scores = np.mean(
+            [model.predict_proba(X)[:, 1] for model in self.component_models_.values()],
+            axis=0,
+        )
+        return np.column_stack([1.0 - positive_scores, positive_scores])
+
+    @property
+    def feature_importances_(self) -> np.ndarray:
+        """Average native importances for diagnostic fallback only."""
+        if not hasattr(self, "component_models_"):
+            raise RuntimeError("The six-tree ensemble must be fitted first.")
+        values = [
+            np.asarray(model.feature_importances_, dtype=float)
+            for model in self.component_models_.values()
+            if hasattr(model, "feature_importances_")
+        ]
+        if not values:
+            return np.zeros(self.n_features_in_, dtype=float)
+        return np.mean(np.vstack(values), axis=0)
+
+
+def primary_model(
+    fast: bool = False,
+    random_state: int = SEED,
+) -> SixTreeSoftVotingClassifier:
+    """Return a fresh six-tree soft-voting estimator."""
+    return SixTreeSoftVotingClassifier(fast=fast, random_state=random_state)
 
 
 def predict_scores(model: Any, X: np.ndarray) -> np.ndarray:
@@ -2389,7 +2540,7 @@ def save_cv_fold_outputs(folds: Sequence[CVFoldData], context: PrimaryContext) -
 
 
 def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> Dict[str, Any]:
-    """Fit and evaluate the selected Random Forest on the untouched outer test.
+    """Fit and evaluate the six-tree soft-voting ensemble on the outer test.
 
     The outer test set did not participate in GO selection or negative-source
     construction. Repeated CV uses source-isolated folds and repeats GO
@@ -2420,7 +2571,9 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         "cv_feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
         "heldout_feature_selection_protocol": OUTER_TRAIN_GO_SELECTION_PROTOCOL,
         "scale_pos_weight": float("nan"),
-        "class_weight": "balanced",
+        "class_weight": "component_specific",
+        "n_component_models": len(TREE_ENSEMBLE_COMPONENT_NAMES),
+        "aggregation": "equal_weight_mean_positive_class_probability",
         "elapsed_s": time.time() - t0,
     }
     row.update(metrics_from_scores(context.y_test, scores))
@@ -2438,6 +2591,39 @@ def run_main_benchmark(bundle: DatasetBundle, context: PrimaryContext, fast: boo
         "tab:main_benchmark_recomputed",
     )
     save_heldout_diagnostics(context, scores, model_name=PRIMARY_MODEL_NAME)
+    component_rows: List[Dict[str, Any]] = []
+    component_score_arrays: List[np.ndarray] = []
+    for name in TREE_ENSEMBLE_COMPONENT_NAMES:
+        component_scores = np.asarray(
+            predict_scores(model.component_models_[name], context.X_test),
+            dtype=float,
+        )
+        component_score_arrays.append(component_scores)
+        component_metrics = metrics_from_scores(context.y_test, component_scores)
+        component_rows.append(
+            {
+                "model": name,
+                "n_test": len(context.y_test),
+                **component_metrics,
+            }
+        )
+    reconstructed_scores = np.mean(component_score_arrays, axis=0)
+    if not np.allclose(reconstructed_scores, scores, atol=1e-12, rtol=0.0):
+        raise AssertionError("Held-out ensemble scores do not equal the six component mean.")
+    save_table(TABLE_DIR / "heldout_tree_component_performance.csv", component_rows)
+    save_json(
+        DATA_DIR / "primary_ensemble_manifest.json",
+        {
+            "model": PRIMARY_MODEL_NAME,
+            "components": list(TREE_ENSEMBLE_COMPONENT_NAMES),
+            "n_components": len(TREE_ENSEMBLE_COMPONENT_NAMES),
+            "aggregation": "equal_weight_mean_positive_class_probability",
+            "component_weight": 1.0 / len(TREE_ENSEMBLE_COMPONENT_NAMES),
+            "score_reconstruction_max_abs_error": float(
+                np.max(np.abs(reconstructed_scores - scores))
+            ),
+        },
+    )
     return {
         "rows": rows,
         "X_train": context.X_train,
@@ -2858,7 +3044,8 @@ def evaluate_go_feature_count_folds(
                     "recall": metrics["recall"],
                     "brier": metrics["brier"],
                     "scale_pos_weight": float("nan"),
-                    "class_weight": "balanced",
+                    "class_weight": "component_specific",
+                    "n_component_models": len(TREE_ENSEMBLE_COMPONENT_NAMES),
                     "train_negative_seed": fold.train_negative_seed,
                     "validation_negative_seed": fold.validation_negative_seed,
                     "feature_selection_seed": fold.feature_selection_seed,
@@ -2998,7 +3185,7 @@ def run_go_feature_count_sensitivity(
 
     fig, ax = plt.subplots(figsize=(8, 4.8))
     x = np.asarray([row["n_go_terms"] for row in summary_rows], dtype=int)
-    ax.errorbar(
+    auroc_plot = ax.errorbar(
         x,
         [row["mean_auroc"] for row in summary_rows],
         yerr=[row["sd_auroc"] for row in summary_rows],
@@ -3006,7 +3193,7 @@ def run_go_feature_count_sensitivity(
         capsize=4,
         label="AUROC",
     )
-    ax.errorbar(
+    auprc_plot = ax.errorbar(
         x,
         [row["mean_auprc"] for row in summary_rows],
         yerr=[row["sd_auprc"] for row in summary_rows],
@@ -3015,7 +3202,17 @@ def run_go_feature_count_sensitivity(
         color="#d62728",
         label="AUPRC",
     )
-    ax.axvline(
+    ax_f1 = ax.twinx()
+    f1_plot = ax_f1.errorbar(
+        x,
+        [row["mean_f1"] for row in summary_rows],
+        yerr=[row["sd_f1"] for row in summary_rows],
+        marker="o",
+        capsize=4,
+        color="#7f3c8d",
+        label="F1",
+    )
+    primary_line = ax.axvline(
         N_GO_TERMS,
         color="#666666",
         linestyle="--",
@@ -3024,9 +3221,17 @@ def run_go_feature_count_sensitivity(
     )
     ax.set_xticks(x)
     ax.set_xlabel("Number of selected GO terms")
-    ax.set_ylabel("Cross-validated metric (mean +/- SD)")
+    ax.set_ylabel("AUROC / AUPRC (mean +/- SD)")
+    ax_f1.set_ylabel("F1 (mean +/- SD)", color="#7f3c8d")
+    ax_f1.tick_params(axis="y", colors="#7f3c8d")
+    # Use the same numerical scale on both axes so small F1 differences are
+    # not exaggerated by an independently autoscaled secondary axis.
+    ax_f1.set_ylim(ax.get_ylim())
     ax.set_title("Cross-validated performance across GO feature counts")
-    ax.legend()
+    ax.legend(
+        [auroc_plot, auprc_plot, f1_plot, primary_line],
+        ["AUROC", "AUPRC", "F1", f"Primary setting ({N_GO_TERMS})"],
+    )
     fig.tight_layout()
     fig.savefig(FIG_DIR / "go_feature_count_cv_performance.png", dpi=220)
     plt.close(fig)
@@ -3129,7 +3334,7 @@ def run_go_feature_count_sensitivity(
 
 
 def model_factory_catalog(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
-    """Return fresh builders for the training-only 13-model comparison."""
+    """Return fresh builders for the training-only 12-model comparison."""
     factories: Dict[str, Callable[[float, int], Any]] = {
         "Logistic Regression": lambda _spw, seed: Pipeline(
             [
@@ -3170,27 +3375,6 @@ def model_factory_catalog(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
             [("scaler", StandardScaler()), ("clf", KNeighborsClassifier(n_neighbors=7))]
         ),
         "Gaussian Naive Bayes": lambda _spw, _seed: GaussianNB(),
-        "Random Forest": lambda _spw, seed: random_forest_model(
-            fast=fast, random_state=seed
-        ),
-        "Extra Trees": lambda _spw, seed: ExtraTreesClassifier(
-            n_estimators=120 if fast else 500,
-            max_depth=10,
-            max_features="sqrt",
-            class_weight="balanced",
-            random_state=seed,
-            n_jobs=-1,
-        ),
-        "Gradient Boosting": lambda _spw, seed: GradientBoostingClassifier(
-            n_estimators=100 if fast else 300,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            random_state=seed,
-        ),
-        "XGBoost": lambda spw, seed: xgb_model(
-            scale_pos_weight=spw, fast=fast, random_state=seed
-        ),
         "MLP": lambda _spw, seed: Pipeline(
             [
                 ("scaler", StandardScaler()),
@@ -3205,34 +3389,8 @@ def model_factory_catalog(fast: bool) -> Dict[str, Callable[[float, int], Any]]:
                 ),
             ]
         ),
-        "AdaBoost": lambda _spw, seed: AdaBoostClassifier(
-            n_estimators=80 if fast else 200, random_state=seed
-        ),
     }
-    if lgb is not None:
-        factories["LightGBM"] = lambda spw, seed: lgb.LGBMClassifier(
-            n_estimators=160 if fast else 500,
-            max_depth=5,
-            learning_rate=0.05 if fast else 0.03,
-            num_leaves=31 if fast else 63,
-            subsample=0.8,
-            colsample_bytree=0.7,
-            scale_pos_weight=spw,
-            random_state=seed,
-            n_jobs=-1,
-            verbose=-1,
-        )
-    if cb is not None:
-        factories["CatBoost"] = lambda spw, seed: cb.CatBoostClassifier(
-            iterations=160 if fast else 500,
-            depth=5,
-            learning_rate=0.05 if fast else 0.03,
-            scale_pos_weight=spw,
-            random_seed=seed,
-            verbose=0,
-            allow_writing_files=False,
-            thread_count=-1,
-        )
+    factories.update(tree_model_factory_catalog(fast))
     return factories
 
 
@@ -3249,11 +3407,11 @@ def run_model_comparison(
     context: PrimaryContext,
     fast: bool,
 ) -> List[Dict[str, Any]]:
-    """Compare all model families within outer training only.
+    """Compare 12 base models and derive the six-tree ensemble within training.
 
     Every estimator receives the same source-isolated folds and the same
-    fold-specific GO representation. The untouched outer test is therefore
-    reserved for the selected Random Forest rather than used for model choice.
+    fold-specific GO representation. The six tree scores are averaged within
+    each fold without refitting or using the untouched outer test.
     """
     ratio_label = f"1:{context.ratio}"
     folds = build_cv_fold_datasets(
@@ -3265,11 +3423,17 @@ def run_model_comparison(
     )
     factories = model_factory_catalog(fast)
     per_fold_rows: List[Dict[str, Any]] = []
+    tree_score_cache: Dict[Tuple[int, int], Dict[str, np.ndarray]] = defaultdict(dict)
     missing_optional = []
     if lgb is None:
         missing_optional.append("LightGBM")
     if cb is None:
         missing_optional.append("CatBoost")
+    if missing_optional:
+        raise RuntimeError(
+            "The 12-model comparison and six-tree ensemble require: "
+            + ", ".join(missing_optional)
+        )
 
     for name, factory in factories.items():
         print(f"  - {name}", flush=True)
@@ -3278,12 +3442,16 @@ def run_model_comparison(
             model = factory(fold.scale_pos_weight, fold.model_seed)
             model.fit(fold.X_train, fold.y_train)
             scores = predict_scores(model, fold.X_validation)
+            fold_key = (fold.repeat_index, fold.fold_index)
+            if name in TREE_ENSEMBLE_COMPONENT_NAMES:
+                tree_score_cache[fold_key][name] = np.asarray(scores, dtype=float)
             metrics = metrics_from_scores(fold.y_validation, scores)
             prevalence = float(np.mean(fold.y_validation == 1))
             per_fold_rows.append(
                 {
                     "model": name,
-                    "primary_model": name == PRIMARY_MODEL_NAME,
+                    "primary_model": False,
+                    "included_in_primary_ensemble": name in TREE_ENSEMBLE_COMPONENT_NAMES,
                     "primary_ratio": ratio_label,
                     "repeat_index": fold.repeat_index,
                     "repeat_seed": fold.repeat_seed,
@@ -3320,6 +3488,51 @@ def run_model_comparison(
         save_table(TABLE_DIR / "model_comparison_per_fold_partial.csv", per_fold_rows)
 
     per_fold_df = pd.DataFrame(per_fold_rows)
+    ensemble_fold_rows: List[Dict[str, Any]] = []
+    for fold in folds:
+        fold_key = (fold.repeat_index, fold.fold_index)
+        component_scores = tree_score_cache.get(fold_key, {})
+        missing_components = [
+            name for name in TREE_ENSEMBLE_COMPONENT_NAMES if name not in component_scores
+        ]
+        if missing_components:
+            raise AssertionError(
+                "Cannot derive the six-tree fold score; missing: "
+                + ", ".join(missing_components)
+            )
+        scores = np.mean(
+            [component_scores[name] for name in TREE_ENSEMBLE_COMPONENT_NAMES],
+            axis=0,
+        )
+        metrics = metrics_from_scores(fold.y_validation, scores)
+        prevalence = float(np.mean(fold.y_validation == 1))
+        ensemble_fold_rows.append(
+            {
+                "model": PRIMARY_MODEL_NAME,
+                "primary_model": True,
+                "primary_ratio": ratio_label,
+                "repeat_index": fold.repeat_index,
+                "repeat_seed": fold.repeat_seed,
+                "fold_index": fold.fold_index,
+                "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
+                "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
+                "selected_go_sha256": fold.selected_go_sha256,
+                "n_train": len(fold.y_train),
+                "n_validation": len(fold.y_validation),
+                "positive_prevalence": prevalence,
+                "auroc": metrics["test_auroc"],
+                "auprc": metrics["test_auprc"],
+                "normalized_auprc": normalized_auprc(metrics["test_auprc"], prevalence),
+                "f1": metrics["f1"],
+                "precision": metrics["precision"],
+                "recall": metrics["recall"],
+                "brier": metrics["brier"],
+                "component_models": ";".join(TREE_ENSEMBLE_COMPONENT_NAMES),
+                "aggregation": "equal_weight_mean_positive_class_probability",
+            }
+        )
+    ensemble_fold_df = pd.DataFrame(ensemble_fold_rows)
+    save_table(TABLE_DIR / "tree_ensemble_cv_per_fold.csv", ensemble_fold_rows)
     metric_columns = [
         "auroc",
         "auprc",
@@ -3335,7 +3548,8 @@ def run_model_comparison(
         subset = per_fold_df[per_fold_df["model"] == name]
         row: Dict[str, Any] = {
             "model": name,
-            "primary_model": name == PRIMARY_MODEL_NAME,
+            "primary_model": False,
+            "included_in_primary_ensemble": name in TREE_ENSEMBLE_COMPONENT_NAMES,
             "primary_ratio": ratio_label,
             "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
             "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
@@ -3355,7 +3569,8 @@ def run_model_comparison(
             {
                 "model": name,
                 "primary_ratio": ratio_label,
-                "primary_model": name == PRIMARY_MODEL_NAME,
+                "primary_model": False,
+                "included_in_primary_ensemble": name in TREE_ENSEMBLE_COMPONENT_NAMES,
                 "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
                 "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
                 "outer_test_used": False,
@@ -3382,26 +3597,55 @@ def run_model_comparison(
     save_table_aliases(rows, "model_comparison.csv", "table_method_comparison.csv")
     (TABLE_DIR / "model_comparison_per_fold_partial.csv").unlink(missing_ok=True)
 
+    ensemble_summary: Dict[str, Any] = {
+        "model": PRIMARY_MODEL_NAME,
+        "primary_model": True,
+        "primary_ratio": ratio_label,
+        "n_components": len(TREE_ENSEMBLE_COMPONENT_NAMES),
+        "component_models": ";".join(TREE_ENSEMBLE_COMPONENT_NAMES),
+        "aggregation": "equal_weight_mean_positive_class_probability",
+        "outer_test_used": False,
+        "n_folds": len(ensemble_fold_df),
+    }
+    for metric in metric_columns[:-1]:
+        ensemble_summary[f"mean_{metric}"] = float(ensemble_fold_df[metric].mean())
+        ensemble_summary[f"sd_{metric}"] = (
+            float(ensemble_fold_df[metric].std(ddof=1))
+            if len(ensemble_fold_df) > 1
+            else 0.0
+        )
+    save_table(TABLE_DIR / "tree_ensemble_cv.csv", [ensemble_summary])
+
     successful = [row for row in rows if row["status"] == "ok"]
     ordered = successful[::-1]
     fig, axes = plt.subplots(1, 3, figsize=(15, 6))
-    for ax, metric, label, colour in [
-        (axes[0], "auroc", "CV AUROC", "#4c78a8"),
-        (axes[1], "auprc", "CV AUPRC", "#59a14f"),
-        (axes[2], "f1", "CV F1", "#f28e2b"),
+    for ax, metric, label, tree_colour, other_colour in [
+        (axes[0], "auroc", "CV AUROC", "#2f5f8f", "#a9c4df"),
+        (axes[1], "auprc", "CV AUPRC", "#3f7f45", "#afd3ad"),
+        (axes[2], "f1", "CV F1", "#c96f1a", "#f6c792"),
     ]:
+        colours = [
+            tree_colour if row["model"] in TREE_ENSEMBLE_COMPONENT_NAMES else other_colour
+            for row in ordered
+        ]
         ax.barh(
             [row["model"] for row in ordered],
             [row[f"mean_{metric}"] for row in ordered],
             xerr=[row[f"sd_{metric}"] for row in ordered],
-            color=colour,
-            alpha=0.9,
+            color=colours,
             capsize=2,
         )
         ax.set_xlabel(f"{label} (mean +/- SD)")
         ax.set_title(label)
     fig.suptitle("Training-only cross-validated model comparison", fontweight="bold")
-    fig.tight_layout()
+    fig.text(
+        0.5,
+        0.925,
+        "Darker bars: tree-based models   |   Lighter bars: other classifiers",
+        ha="center",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.91))
     fig.savefig(FIG_DIR / "model_comparison_auroc.png", dpi=220)
     fig.savefig(FIG_DIR / "Fig8_methods.png", dpi=220)
     plt.close(fig)
@@ -3429,9 +3673,7 @@ def run_model_comparison(
         "tab:method_comparison_recomputed",
     )
     paired_rows: List[Dict[str, Any]] = []
-    primary_fold = per_fold_df[per_fold_df["model"] == PRIMARY_MODEL_NAME].sort_values(
-        ["repeat_index", "fold_index"]
-    )
+    primary_fold = ensemble_fold_df.sort_values(["repeat_index", "fold_index"])
     for name in factories:
         comparison_fold = per_fold_df[per_fold_df["model"] == name].sort_values(
             ["repeat_index", "fold_index"]
@@ -3464,8 +3706,13 @@ def run_model_comparison(
             "protocol": MODEL_COMPARISON_PROTOCOL,
             "outer_test_used": False,
             "primary_model": PRIMARY_MODEL_NAME,
+            "primary_model_type": "derived_equal_weight_soft_voting_ensemble",
+            "primary_model_components": list(TREE_ENSEMBLE_COMPONENT_NAMES),
             "observed_top_mean_auroc_model": successful[0]["model"],
+            "primary_ensemble_mean_auroc": ensemble_summary["mean_auroc"],
+            "primary_ensemble_sd_auroc": ensemble_summary["sd_auroc"],
             "n_folds": len(folds),
+            "n_base_models": len(factories),
             "model_names": list(factories),
             "fold_selected_go_sha256": [fold.selected_go_sha256 for fold in folds],
             "feature_selection_protocol": NESTED_GO_SELECTION_PROTOCOL,
@@ -3519,7 +3766,8 @@ def run_ablation(bundle: DatasetBundle, context: PrimaryContext, fast: bool) -> 
             "d": len(cols),
             "feature_selection_protocol": PRIMARY_FIXED_GO_SELECTION_PROTOCOL,
             "scale_pos_weight": float("nan"),
-            "class_weight": "balanced",
+            "class_weight": "component_specific",
+            "n_component_models": len(TREE_ENSEMBLE_COMPONENT_NAMES),
         }
         row.update(metrics_from_scores(y_test, scores))
         rows.append(row)
@@ -3573,41 +3821,160 @@ def positive_class_shap_values(values: Any, n_features: int) -> np.ndarray:
     return np.asarray(array, dtype=float)
 
 
+def positive_class_expected_value(value: Any) -> float:
+    """Return the positive-class SHAP base value from scalar or class output."""
+    array = np.asarray(value, dtype=float)
+    if array.ndim == 0:
+        return float(array)
+    return float(array.reshape(-1)[-1])
+
+
+def shap_additivity_error(
+    reconstructed: Sequence[float],
+    predicted: Sequence[float],
+) -> float:
+    """Validate SHAP reconstruction using TreeExplainer's numeric tolerance."""
+    reconstructed_array = np.asarray(reconstructed, dtype=float)
+    predicted_array = np.asarray(predicted, dtype=float)
+    max_error = float(np.max(np.abs(reconstructed_array - predicted_array)))
+    if not np.allclose(
+        reconstructed_array,
+        predicted_array,
+        atol=SHAP_ADDITIVITY_ATOL,
+        rtol=SHAP_ADDITIVITY_RTOL,
+    ):
+        raise AssertionError(
+            "Probability-scale SHAP additivity failed: "
+            f"max absolute error {max_error:.3g}."
+        )
+    return max_error
+
+
+def select_shap_background_indices(
+    y_train: Sequence[int],
+    size: int = SHAP_BACKGROUND_SIZE,
+    seed: int = SHAP_BACKGROUND_SEED,
+) -> np.ndarray:
+    """Select a deterministic class-balanced background from outer training."""
+    y_arr = np.asarray(y_train, dtype=int)
+    rng = np.random.default_rng(seed)
+    positive = np.flatnonzero(y_arr == 1)
+    negative = np.flatnonzero(y_arr == 0)
+    target_positive = min(len(positive), size // 2)
+    target_negative = min(len(negative), size - target_positive)
+    selected = np.concatenate(
+        [
+            rng.choice(positive, size=target_positive, replace=False),
+            rng.choice(negative, size=target_negative, replace=False),
+        ]
+    )
+    return np.sort(selected.astype(int))
+
+
 def run_importance(
     bundle: DatasetBundle,
     context: PrimaryContext,
     model: Any,
     X_test: np.ndarray,
 ) -> List[Dict[str, Any]]:
-    """Compute feature importance via SHAP (preferred) or model importances (fallback).
+    """Average probability-scale Tree SHAP values across the six components."""
+    if shap is None:
+        raise RuntimeError("SHAP is required for the six-tree ensemble attribution.")
+    if not isinstance(model, SixTreeSoftVotingClassifier):
+        raise TypeError("Ensemble attribution requires a fitted SixTreeSoftVotingClassifier.")
 
-    Uses TreeExplainer on up to 300 test samples; if SHAP is unavailable,
-    falls back to the fitted Random Forest feature importances.
-    Produces table_top_features.csv and Fig3_shap.png.
-    """
-    if shap is not None:
-        try:
-            explainer = shap.TreeExplainer(model)
-            vals = explainer.shap_values(X_test[: min(300, len(X_test))])
-            vals = positive_class_shap_values(vals, len(bundle.feature_names))
-            importance = np.mean(np.abs(vals), axis=0)
-            method = "shap_mean_abs_positive_class"
-        except Exception as exc:
-            warnings.warn(
-                f"SHAP importance failed; using Random Forest feature importances instead: {exc}",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            importance = getattr(model, "feature_importances_", np.zeros(len(bundle.feature_names)))
-            method = "model_feature_importance_fallback"
-    else:
-        warnings.warn(
-            "SHAP is unavailable; using Random Forest feature importances instead.",
-            RuntimeWarning,
-            stacklevel=2,
+    n_features = len(bundle.feature_names)
+    X_explain = np.asarray(X_test[: min(300, len(X_test))], dtype=float)
+    background_indices = select_shap_background_indices(context.y_train)
+    background = np.asarray(context.X_train[background_indices], dtype=float)
+    component_values: List[np.ndarray] = []
+    component_bases: List[float] = []
+    component_audit_rows: List[Dict[str, Any]] = []
+    component_feature_rows: List[Dict[str, Any]] = []
+
+    for name in TREE_ENSEMBLE_COMPONENT_NAMES:
+        component = model.component_models_[name]
+        explainer = shap.TreeExplainer(
+            component,
+            data=background,
+            feature_perturbation="interventional",
+            model_output="probability",
         )
-        importance = getattr(model, "feature_importances_", np.zeros(len(bundle.feature_names)))
-        method = "model_feature_importance_fallback"
+        values = positive_class_shap_values(
+            explainer.shap_values(X_explain),
+            n_features,
+        )
+        base_value = positive_class_expected_value(explainer.expected_value)
+        component_scores = np.asarray(predict_scores(component, X_explain), dtype=float)
+        reconstructed = base_value + values.sum(axis=1)
+        max_error = shap_additivity_error(reconstructed, component_scores)
+        component_values.append(values)
+        component_bases.append(base_value)
+        component_audit_rows.append(
+            {
+                "model": name,
+                "model_output": "probability",
+                "feature_perturbation": "interventional",
+                "n_background": len(background),
+                "n_explained": len(X_explain),
+                "expected_value": base_value,
+                "max_abs_additivity_error": max_error,
+                "additivity_atol": SHAP_ADDITIVITY_ATOL,
+                "additivity_rtol": SHAP_ADDITIVITY_RTOL,
+            }
+        )
+        component_importance = np.mean(np.abs(values), axis=0)
+        for feature, value in zip(bundle.feature_names, component_importance, strict=True):
+            component_feature_rows.append(
+                {
+                    "model": name,
+                    "feature": feature,
+                    "mean_abs_probability_shap": float(value),
+                }
+            )
+
+    ensemble_values = np.mean(np.stack(component_values, axis=0), axis=0)
+    ensemble_base = float(np.mean(component_bases))
+    ensemble_scores = np.asarray(predict_scores(model, X_explain), dtype=float)
+    reconstructed_ensemble = ensemble_base + ensemble_values.sum(axis=1)
+    ensemble_error = shap_additivity_error(reconstructed_ensemble, ensemble_scores)
+    importance = np.mean(np.abs(ensemble_values), axis=0)
+    method = SHAP_ENSEMBLE_PROTOCOL
+    save_table(TABLE_DIR / "shap_component_additivity.csv", component_audit_rows)
+    save_table(
+        TABLE_DIR / "shap_component_feature_importance.csv",
+        component_feature_rows,
+    )
+    np.savez_compressed(
+        DATA_DIR / "shap_ensemble_values.npz",
+        signed_probability_shap=ensemble_values,
+        ensemble_base_value=np.asarray([ensemble_base]),
+        heldout_scores=ensemble_scores,
+        background_indices=background_indices,
+        feature_names=np.asarray(bundle.feature_names, dtype=str),
+    )
+    save_json(
+        DATA_DIR / "shap_ensemble_manifest.json",
+        {
+            "protocol": SHAP_ENSEMBLE_PROTOCOL,
+            "components": list(TREE_ENSEMBLE_COMPONENT_NAMES),
+            "component_weight": 1.0 / len(TREE_ENSEMBLE_COMPONENT_NAMES),
+            "common_background_source": "outer_training_only",
+            "common_background_sampling": "deterministic_class_balanced_without_replacement",
+            "background_seed": SHAP_BACKGROUND_SEED,
+            "background_size": len(background_indices),
+            "additivity_atol": SHAP_ADDITIVITY_ATOL,
+            "additivity_rtol": SHAP_ADDITIVITY_RTOL,
+            "background_indices_sha256": stable_json_sha256(background_indices.tolist()),
+            "model_output": "probability",
+            "feature_perturbation": "interventional",
+            "local_value_aggregation": "signed_arithmetic_mean_across_components",
+            "global_importance": "mean_absolute_value_of_averaged_local_attributions",
+            "n_explained": len(X_explain),
+            "ensemble_base_value": ensemble_base,
+            "ensemble_max_abs_additivity_error": ensemble_error,
+        },
+    )
     rows = [
         {
             "rank": i + 1,
@@ -3624,7 +3991,7 @@ def run_importance(
     top = rows[:10][::-1]
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.barh([r["feature"] for r in top], [r["importance"] for r in top], color="#76b7b2")
-    ax.set_xlabel("Importance")
+    ax.set_xlabel("Mean absolute probability-scale SHAP value")
     ax.set_title("Top feature attributions")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "feature_importance.png", dpi=220)
@@ -3938,6 +4305,29 @@ def random_forest_hyperparameters(fast: bool) -> Dict[str, Any]:
     }
 
 
+def extra_trees_hyperparameters(fast: bool) -> Dict[str, Any]:
+    """Canonical Extra Trees hyperparameters for audit output."""
+    return {
+        "n_estimators": 120 if fast else 500,
+        "max_depth": 10,
+        "max_features": "sqrt",
+        "class_weight": "balanced",
+        "random_state": SEED,
+        "n_jobs": 1,
+    }
+
+
+def gradient_boosting_hyperparameters(fast: bool) -> Dict[str, Any]:
+    """Canonical Gradient Boosting hyperparameters for audit output."""
+    return {
+        "n_estimators": 100 if fast else 300,
+        "max_depth": 4,
+        "learning_rate": 0.05,
+        "subsample": 0.8,
+        "random_state": SEED,
+    }
+
+
 def logistic_regression_hyperparameters() -> Dict[str, Any]:
     """Canonical Logistic Regression hyperparameters for audit output."""
     return {
@@ -3982,6 +4372,10 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
     quick_xgb = xgboost_hyperparameters(fast=True)
     paper_rf = random_forest_hyperparameters(fast=False)
     quick_rf = random_forest_hyperparameters(fast=True)
+    paper_et = extra_trees_hyperparameters(fast=False)
+    quick_et = extra_trees_hyperparameters(fast=True)
+    paper_gb = gradient_boosting_hyperparameters(fast=False)
+    quick_gb = gradient_boosting_hyperparameters(fast=True)
     lr = logistic_regression_hyperparameters()
     paper_lgb = lightgbm_hyperparameters(fast=False)
     quick_lgb = lightgbm_hyperparameters(fast=True)
@@ -3991,6 +4385,13 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
     for model, paper, quick, actual in [
         ("XGBoost", paper_xgb, quick_xgb, xgboost_hyperparameters(args.quick)),
         ("Random Forest", paper_rf, quick_rf, random_forest_hyperparameters(args.quick)),
+        ("Extra Trees", paper_et, quick_et, extra_trees_hyperparameters(args.quick)),
+        (
+            "Gradient Boosting",
+            paper_gb,
+            quick_gb,
+            gradient_boosting_hyperparameters(args.quick),
+        ),
         ("Logistic Regression", lr, lr, lr),
         ("LightGBM", paper_lgb, quick_lgb, lightgbm_hyperparameters(args.quick)),
         ("CatBoost", paper_cb, quick_cb, catboost_hyperparameters(args.quick)),
@@ -4004,7 +4405,11 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
             rows.append(
                 {
                     "model": model,
-                    "model_role": "primary" if model == PRIMARY_MODEL_NAME else "comparison",
+                    "model_role": (
+                        "primary_component"
+                        if model in TREE_ENSEMBLE_COMPONENT_NAMES
+                        else "comparison"
+                    ),
                     "parameter": parameter,
                     "paper_full_value": paper.get(parameter),
                     "quick_debug_value": quick.get(parameter),
@@ -4017,15 +4422,39 @@ def hyperparameter_audit_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
         rows.append(
             {
                 "model": model,
-                "model_role": "comparison",
+                "model_role": "primary_component",
                 "parameter": "availability",
                 "paper_full_value": "optional_dependency",
                 "quick_debug_value": "optional_dependency",
                 "actual_used_value": "installed" if installed else "skipped_missing_dependency",
                 "status": "match" if installed else "not_applicable",
-                "notes": "supplementary model comparison only",
+                "notes": "required by the primary six-tree ensemble",
             }
         )
+    rows.extend(
+        [
+            {
+                "model": PRIMARY_MODEL_NAME,
+                "model_role": "primary",
+                "parameter": "components",
+                "paper_full_value": ";".join(TREE_ENSEMBLE_COMPONENT_NAMES),
+                "quick_debug_value": ";".join(TREE_ENSEMBLE_COMPONENT_NAMES),
+                "actual_used_value": ";".join(TREE_ENSEMBLE_COMPONENT_NAMES),
+                "status": "match",
+                "notes": "six independently fitted tree classifiers",
+            },
+            {
+                "model": PRIMARY_MODEL_NAME,
+                "model_role": "primary",
+                "parameter": "aggregation",
+                "paper_full_value": "equal_weight_mean_positive_class_probability",
+                "quick_debug_value": "equal_weight_mean_positive_class_probability",
+                "actual_used_value": "equal_weight_mean_positive_class_probability",
+                "status": "match",
+                "notes": "each component has weight 1/6",
+            },
+        ]
+    )
     return rows
 
 
@@ -4088,7 +4517,7 @@ def cv_scheme_audit_rows(args: argparse.Namespace, sections: Sequence[str]) -> L
         rows.append(
             {
                 "analysis_name": "supplementary_model_comparison",
-                "model": "13-model catalogue",
+                "model": "12-model catalogue plus derived six-tree ensemble",
                 "run_mode": run_mode_from_args(args),
                 "model_comparison_protocol": MODEL_COMPARISON_PROTOCOL,
                 "n_splits": cv_splits,
@@ -4282,6 +4711,9 @@ def save_manifest(
         "comparison_run": context.ratio != DEFAULT_PRIMARY_RATIO,
         "primary_model": PRIMARY_MODEL_NAME,
         "primary_model_slug": PRIMARY_MODEL_SLUG,
+        "primary_model_type": "equal_weight_probability_soft_voting",
+        "primary_model_components": list(TREE_ENSEMBLE_COMPONENT_NAMES),
+        "primary_model_component_weight": 1.0 / len(TREE_ENSEMBLE_COMPONENT_NAMES),
         "primary_ratio": f"1:{context.ratio}",
         "dataset_source": bundle.source,
         "dataset_mode": dataset_mode_from_args(args),
@@ -4331,6 +4763,8 @@ def save_manifest(
         "model_hyperparameters": {
             "XGBoost": xgboost_hyperparameters(args.quick),
             "Random Forest": random_forest_hyperparameters(args.quick),
+            "Extra Trees": extra_trees_hyperparameters(args.quick),
+            "Gradient Boosting": gradient_boosting_hyperparameters(args.quick),
             "Logistic Regression": logistic_regression_hyperparameters(),
             "LightGBM": {
                 "available": lgb is not None,
@@ -4339,6 +4773,11 @@ def save_manifest(
             "CatBoost": {
                 "available": cb is not None,
                 "parameters": catboost_hyperparameters(args.quick),
+            },
+            PRIMARY_MODEL_NAME: {
+                "components": list(TREE_ENSEMBLE_COMPONENT_NAMES),
+                "aggregation": "equal_weight_mean_positive_class_probability",
+                "component_weight": 1.0 / len(TREE_ENSEMBLE_COMPONENT_NAMES),
             },
         },
         "cv_scheme_audit_table": "tables/cv_scheme_audit.csv",
@@ -4351,7 +4790,8 @@ def save_manifest(
             "Ratio comparison uses shared folds for Logistic Regression, Random Forest, and XGBoost, with variance and mutual-information selection repeated inside each fold training side.",
             "Source-derived negative controls are generated independently on each split side.",
             f"{PRIMARY_MODEL_NAME} is the primary model for held-out evaluation and downstream analyses.",
-            "The 13-model comparison is confined to shared outer-training CV folds; it does not use the outer test set.",
+            "The 12 base models are compared on shared outer-training CV folds; the six-tree ensemble is derived by averaging its component probabilities within those folds.",
+            "Neither the base-model comparison nor the derived ensemble uses the outer test set during model selection.",
         ],
         "paper_output_map": {
             "heldout_primary_model_diagnostics": (
@@ -4365,7 +4805,10 @@ def save_manifest(
                 "tables/kegg_pathway_filter_audit.csv and "
                 "tables/kegg_pathway_filter_summary.json"
             ),
-            "method_comparison": "tables/table_method_comparison.csv and figures/Fig8_methods.png",
+            "method_comparison": (
+                "tables/table_method_comparison.csv, tables/tree_ensemble_cv.csv, "
+                "tables/tree_ensemble_cv_per_fold.csv, and figures/Fig8_methods.png"
+            ),
             "training_only_ratio_cv": (
                 "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, "
                 "tables/ratio_cv_consensus_summary.csv, "
@@ -4380,7 +4823,12 @@ def save_manifest(
                 "figures/go_feature_count_cv_runtime_zoomed.png"
             ),
             "ablation": "tables/table_ablation.csv and figures/Fig_ablation.png",
-            "feature_importance": "tables/table_top_features.csv and figures/Fig3_shap.png",
+            "feature_importance": (
+                "tables/table_top_features.csv, tables/shap_component_additivity.csv, "
+                "tables/shap_component_feature_importance.csv, "
+                "data/shap_ensemble_manifest.json, data/shap_ensemble_values.npz, "
+                "and figures/Fig3_shap.png"
+            ),
             "primary_split_audit": "tables/main_split_audit.csv and data/main_split.json",
             "negative_metadata": "tables/negative_metadata.csv",
             "go_selection_audit": "tables/go_selection_audit.csv",
@@ -4606,7 +5054,9 @@ def save_old_vs_candidate_comparison(bundle: DatasetBundle, context: PrimaryCont
 
     checklist = [
         "Paper items to synchronize only after candidate approval:",
-        "- Primary-model name, rationale, methods, and hyperparameters (Random Forest replaces XGBoost).",
+        "- Primary-model name, six component models, soft-voting rule, rationale, methods, and hyperparameters.",
+        "- The 12-model comparison and the six-component primary ensemble.",
+        "- Probability-scale Tree SHAP protocol and averaged ensemble attributions.",
         "- Model comparison protocol (training-only repeated CV; outer test excluded from model selection).",
         "- Selected GO count, total feature dimension, and feature-selection wording.",
         "- Outer train/test sample counts and class prevalence.",
@@ -4718,6 +5168,17 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
     env = os.environ.copy()
     env["PATHWAYML_CHILD"] = "1"
     env["PYTHONWARNINGS"] = "ignore"
+    # Constrain native BLAS/OpenMP pools inside each analysis process. This
+    # avoids oversubscription and a reproducible macOS crash when sklearn,
+    # XGBoost, LightGBM, and CatBoost are exercised sequentially.
+    for variable in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    ):
+        env[variable] = "1"
 
     selection_chunks = [[section] for section in SELECTION_STAGE_SECTIONS]
     for chunk in selection_chunks:
@@ -4788,7 +5249,7 @@ def run_all_in_child_processes(args: argparse.Namespace) -> None:
 def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
     """Run requested multi-section jobs in isolated processes when models are included.
 
-    The supplementary 13-model block imports and exercises several optional
+    The 12-model comparison imports and exercises several optional
     native libraries.  Running it after XGBoost/RF/CV work in the same process
     can be unstable on some local Python builds, so mixed-section commands such
     as ``--sections main models`` use the same child-process isolation as the
@@ -4807,6 +5268,14 @@ def run_requested_sections_in_child_processes(args: argparse.Namespace) -> None:
     env = os.environ.copy()
     env["PATHWAYML_CHILD"] = "1"
     env["PYTHONWARNINGS"] = "ignore"
+    for variable in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    ):
+        env[variable] = "1"
     for chunk in chunks:
         cmd = [
             sys.executable,

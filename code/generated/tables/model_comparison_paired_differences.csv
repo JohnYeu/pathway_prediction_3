@@ -1,53 +1,49 @@
 primary_model,comparison_model,metric,n_paired_folds,mean_primary_minus_comparison,sd_difference,descriptive_95pct_lower,descriptive_95pct_upper,note
-Random Forest,Logistic Regression,auroc,15,0.05259346211515581,0.024230569792734125,0.04033110192704271,0.0648558223032689,Descriptive paired interval; no significance claim.
-Random Forest,Logistic Regression,auprc,15,0.05983942678966544,0.04561777519267395,0.036753647330996786,0.08292520624833409,Descriptive paired interval; no significance claim.
-Random Forest,Logistic Regression,f1,15,0.06051931975885357,0.03762720647760545,0.041477326002715934,0.07956131351499121,Descriptive paired interval; no significance claim.
-Random Forest,Logistic Regression,brier,15,-0.03244060887241876,0.015074905182924342,-0.040069563483717346,-0.02481165426112017,Descriptive paired interval; no significance claim.
-Random Forest,Linear SVM,auroc,15,0.05163268652883481,0.02361982710470839,0.03967940478530182,0.06358596827236782,Descriptive paired interval; no significance claim.
-Random Forest,Linear SVM,auprc,15,0.05878698365259625,0.03526750296005778,0.04093916464005064,0.07663480266514186,Descriptive paired interval; no significance claim.
-Random Forest,Linear SVM,f1,15,0.040007993132259424,0.03269070860887657,0.023464211983254032,0.056551774281264816,Descriptive paired interval; no significance claim.
-Random Forest,Linear SVM,brier,15,-0.03678300160395446,0.01047711569310225,-0.04208515369778911,-0.031480849510119806,Descriptive paired interval; no significance claim.
-Random Forest,RBF SVM,auroc,15,0.03074773228243507,0.02079143522344113,0.020225814320187736,0.041269650244682404,Descriptive paired interval; no significance claim.
-Random Forest,RBF SVM,auprc,15,0.011499543834961493,0.023508379889998994,-0.0003973378362488768,0.023396425506171863,Descriptive paired interval; no significance claim.
-Random Forest,RBF SVM,f1,15,0.06261807303023702,0.03546718988483624,0.04466919849083276,0.08056694756964128,Descriptive paired interval; no significance claim.
-Random Forest,RBF SVM,brier,15,-0.0211926611945333,0.008065678751802967,-0.025274457820127976,-0.017110864568938625,Descriptive paired interval; no significance claim.
-Random Forest,k-NN (k=7),auroc,15,0.09417060452793073,0.028294569402362746,0.07985157677302518,0.10848963228283628,Descriptive paired interval; no significance claim.
-Random Forest,k-NN (k=7),auprc,15,0.11455888792099751,0.029937534585792576,0.09940840506503251,0.1297093707769625,Descriptive paired interval; no significance claim.
-Random Forest,k-NN (k=7),f1,15,0.08044477456092386,0.03737917233265752,0.06152830340084231,0.09936124572100541,Descriptive paired interval; no significance claim.
-Random Forest,k-NN (k=7),brier,15,-0.045625268274967344,0.014906664804817657,-0.05316908150774387,-0.03808145504219082,Descriptive paired interval; no significance claim.
-Random Forest,Gaussian Naive Bayes,auroc,15,0.1378651356299549,0.03081841261587087,0.12226886698442688,0.1534614042754829,Descriptive paired interval; no significance claim.
-Random Forest,Gaussian Naive Bayes,auprc,15,0.15667317586244137,0.03396148238567377,0.13948629445198985,0.1738600572728929,Descriptive paired interval; no significance claim.
-Random Forest,Gaussian Naive Bayes,f1,15,0.06830875987006803,0.028422802047591546,0.05392483744297274,0.08269268229716331,Descriptive paired interval; no significance claim.
-Random Forest,Gaussian Naive Bayes,brier,15,-0.15738058849440764,0.027725872387531138,-0.17141181585116239,-0.1433493611376529,Descriptive paired interval; no significance claim.
-Random Forest,Random Forest,auroc,15,0.0,0.0,0.0,0.0,Descriptive paired interval; no significance claim.
-Random Forest,Random Forest,auprc,15,0.0,0.0,0.0,0.0,Descriptive paired interval; no significance claim.
-Random Forest,Random Forest,f1,15,0.0,0.0,0.0,0.0,Descriptive paired interval; no significance claim.
-Random Forest,Random Forest,brier,15,0.0,0.0,0.0,0.0,Descriptive paired interval; no significance claim.
-Random Forest,Extra Trees,auroc,15,0.012603903337259033,0.012533956875256089,0.006260845988572392,0.018946960685945674,Descriptive paired interval; no significance claim.
-Random Forest,Extra Trees,auprc,15,0.010741047154145034,0.023150767205022175,-0.0009748575285531257,0.022456951836843195,Descriptive paired interval; no significance claim.
-Random Forest,Extra Trees,f1,15,0.018468521219922276,0.020339020286349277,0.00817555680522075,0.0287614856346238,Descriptive paired interval; no significance claim.
-Random Forest,Extra Trees,brier,15,-0.014268418981337535,0.0036042776656488433,-0.016092435144895136,-0.012444402817779934,Descriptive paired interval; no significance claim.
-Random Forest,Gradient Boosting,auroc,15,0.0054718855429044385,0.014375952781010793,-0.0018033503494401769,0.012747121435249054,Descriptive paired interval; no significance claim.
-Random Forest,Gradient Boosting,auprc,15,0.009456806925335978,0.023442896764206998,-0.0024069357119361236,0.02132054956260808,Descriptive paired interval; no significance claim.
-Random Forest,Gradient Boosting,f1,15,0.014764381723350225,0.020606883366758987,0.004335859886715258,0.025192903559985193,Descriptive paired interval; no significance claim.
-Random Forest,Gradient Boosting,brier,15,-0.00507811846204686,0.011501344342926259,-0.01089860176833583,0.00074236484424211,Descriptive paired interval; no significance claim.
-Random Forest,XGBoost,auroc,15,0.0002953490395644372,0.013771440534862464,-0.006673961446823819,0.007264659525952693,Descriptive paired interval; no significance claim.
-Random Forest,XGBoost,auprc,15,0.011421314454480655,0.02597070539364405,-0.001721675850754771,0.02456430475971608,Descriptive paired interval; no significance claim.
-Random Forest,XGBoost,f1,15,0.012721071630522274,0.01919904383920602,0.003005014895681741,0.022437128365362807,Descriptive paired interval; no significance claim.
-Random Forest,XGBoost,brier,15,-0.0013150787777379048,0.009461026244646027,-0.006103018663321165,0.0034728611078453553,Descriptive paired interval; no significance claim.
-Random Forest,MLP,auroc,15,0.08997753899606202,0.040919725494803674,0.06926930072068888,0.11068577727143517,Descriptive paired interval; no significance claim.
-Random Forest,MLP,auprc,15,0.09077441874716656,0.05060471750304972,0.06516489827166447,0.11638393922266865,Descriptive paired interval; no significance claim.
-Random Forest,MLP,f1,15,0.07920273436876159,0.05159812478006112,0.05309048044751695,0.10531498829000623,Descriptive paired interval; no significance claim.
-Random Forest,MLP,brier,15,-0.045083351575004545,0.014457873161804928,-0.052400044900031834,-0.037766658249977256,Descriptive paired interval; no significance claim.
-Random Forest,AdaBoost,auroc,15,0.018553232929922635,0.01829754456440613,0.00929339777433006,0.02781306808551521,Descriptive paired interval; no significance claim.
-Random Forest,AdaBoost,auprc,15,0.030654287199571358,0.03081199630838902,0.015061265653640802,0.04624730874550191,Descriptive paired interval; no significance claim.
-Random Forest,AdaBoost,f1,15,0.020993160434176428,0.029638003994488106,0.005994260971806867,0.03599205989654599,Descriptive paired interval; no significance claim.
-Random Forest,AdaBoost,brier,15,-0.0562489318157389,0.004796184641785701,-0.05867613613282055,-0.053821727498657254,Descriptive paired interval; no significance claim.
-Random Forest,LightGBM,auroc,15,0.009254695550290067,0.014780867824686841,0.001774544373096057,0.016734846727484078,Descriptive paired interval; no significance claim.
-Random Forest,LightGBM,auprc,15,0.021773869780493286,0.02847919600589006,0.007361408072852592,0.03618633148813398,Descriptive paired interval; no significance claim.
-Random Forest,LightGBM,f1,15,0.01548566772910877,0.022988934266722372,0.0038516618129979287,0.02711967364521961,Descriptive paired interval; no significance claim.
-Random Forest,LightGBM,brier,15,-0.008613088043502266,0.009371173923941267,-0.013355556380969063,-0.0038706197060354676,Descriptive paired interval; no significance claim.
-Random Forest,CatBoost,auroc,15,0.004040100434238422,0.013685833255157622,-0.002885886791184667,0.01096608765966151,Descriptive paired interval; no significance claim.
-Random Forest,CatBoost,auprc,15,0.008536844500161796,0.033270501060610407,-0.008300352112793657,0.025374041113117248,Descriptive paired interval; no significance claim.
-Random Forest,CatBoost,f1,15,0.0150658431640309,0.017354717242681506,0.006283144465115796,0.023848541862946007,Descriptive paired interval; no significance claim.
-Random Forest,CatBoost,brier,15,-0.0009028239201062215,0.007771957730901331,-0.004835977200376177,0.003030329360163733,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Logistic Regression,auroc,15,0.04221125995149232,0.023753974062831463,0.03019009048048467,0.05423242942249998,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Logistic Regression,auprc,15,0.03719765099593949,0.027750240501297915,0.023154091672141913,0.051241210319737066,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Logistic Regression,f1,15,0.04524829855595822,0.024339622161105984,0.03293075025498682,0.05756584685692963,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Logistic Regression,brier,15,-0.028037223215420053,0.012503492243045273,-0.03436486333304845,-0.021709583097791654,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Linear SVM,auroc,15,0.04305807504025058,0.026558279285918487,0.02961773131882099,0.05649841876168017,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Linear SVM,auprc,15,0.0382646342394203,0.03164318628574895,0.022250972528016073,0.054278295950824534,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Linear SVM,f1,15,0.033969841005195595,0.025883167500277447,0.02087115098624117,0.04706853102415002,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Linear SVM,brier,15,-0.03622115114209849,0.012003006989686897,-0.04229551077569305,-0.030146791508503933,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,RBF SVM,auroc,15,0.03027361127771672,0.028729537926913323,0.015734459078187886,0.044812763477245554,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,RBF SVM,auprc,15,0.011836417522371944,0.0376492908719425,-0.007216752479318878,0.03088958752406277,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,RBF SVM,f1,15,0.05206465163227792,0.03234253274358897,0.035697071782106404,0.06843223148244944,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,RBF SVM,brier,15,-0.023442174851037504,0.010796373769654633,-0.028905893823453092,-0.017978455878621916,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,k-NN (k=7),auroc,15,0.0876419687501993,0.037848571412958595,0.06848794888020888,0.10679598862018973,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,k-NN (k=7),auprc,15,0.09672076926458126,0.045389264256774385,0.07375063229500355,0.11969090623415897,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,k-NN (k=7),f1,15,0.06644608492700557,0.03035492043927316,0.051084375685669446,0.08180779416834169,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,k-NN (k=7),brier,15,-0.04547002550585068,0.015831483712853454,-0.05348186168056037,-0.037458189331140986,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Gaussian Naive Bayes,auroc,15,0.1257685512578413,0.03198325492284992,0.10958279107114396,0.14195431144453866,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Gaussian Naive Bayes,auprc,15,0.13903940183747115,0.04325035547835367,0.11715170205673646,0.16092710161820584,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Gaussian Naive Bayes,f1,15,0.06433985374425631,0.031806901494432493,0.048243340706023125,0.0804363667824895,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Gaussian Naive Bayes,brier,15,-0.1650549608239597,0.024620475522815342,-0.17751464053623434,-0.15259528111168508,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,MLP,auroc,15,0.10927478266998314,0.04116423850311975,0.08844280373954913,0.13010676160041715,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,MLP,auprc,15,0.10008489334183499,0.03543257914033928,0.0821535342558035,0.11801625242786647,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,MLP,f1,15,0.09663067307527223,0.03869313857453736,0.07704924325054618,0.11621210289999828,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,MLP,brier,15,-0.0556048093010054,0.017695999092452938,-0.06456022044553611,-0.04664939815647469,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Random Forest,auroc,15,0.0007678682126578629,0.011869912295591183,-0.005239136212533064,0.006774872637848791,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Random Forest,auprc,15,-0.003272326389975174,0.026217329452382903,-0.016540125689187165,0.009995472909236818,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Random Forest,f1,15,-0.0034132204049237115,0.012549639998545397,-0.009764214509051645,0.0029377736992042217,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Random Forest,brier,15,-0.003716304090974461,0.0047172104840720284,-0.006103541969968951,-0.0013290662119799712,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Extra Trees,auroc,15,0.01268771539912974,0.017398532206912194,0.0038828432689820332,0.02149258752927745,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Extra Trees,auprc,15,0.007653463921708492,0.022857041991302052,-0.003913795293806033,0.019220723137223016,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Extra Trees,f1,15,0.012980375562538978,0.017481824160827792,0.004133351887940546,0.02182739923713741,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Extra Trees,brier,15,-0.016996440547306053,0.0079391677876648,-0.021014213791557348,-0.012978667303054758,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Gradient Boosting,auroc,15,0.008322030597825008,0.009715944885063008,0.0034050840807759684,0.013238977114874047,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Gradient Boosting,auprc,15,0.014312015755553971,0.018626009201617222,0.004885954558849144,0.023738076952258796,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Gradient Boosting,f1,15,0.010270971332670076,0.01701564812368754,0.0016598652830956788,0.018882077382244473,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,Gradient Boosting,brier,15,-0.009899757880102002,0.008026644371374868,-0.013961800383667212,-0.0058377153765367925,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,XGBoost,auroc,15,0.007114775436957747,0.010387529379794331,0.001857960272923077,0.012371590600992417,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,XGBoost,auprc,15,0.01607999168052107,0.027267324900575374,0.0022808213697418523,0.029879161991300286,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,XGBoost,f1,15,0.011025391930612465,0.020184146186237185,0.0008108046244820234,0.021239979236742906,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,XGBoost,brier,15,-0.00888603406837244,0.0064841439291642294,-0.012167463644775597,-0.005604604491969283,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,LightGBM,auroc,15,0.01133986777877305,0.009574157378459664,0.006494675640222613,0.016185059917323486,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,LightGBM,auprc,15,0.01797965320970052,0.024875254194790905,0.005391037699764609,0.03056826871963643,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,LightGBM,f1,15,0.01532133516906955,0.025064982961959713,0.002636703655342916,0.028005966682796184,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,LightGBM,brier,15,-0.012930948242048322,0.007748318188902549,-0.016852138263461772,-0.009009758220634871,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,CatBoost,auroc,15,0.004635599474756388,0.0083767483481302,0.00039637991332636385,0.00887481903618641,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,CatBoost,auprc,15,0.009190496486015094,0.019298177943249777,-0.000575729027401788,0.018956721999431977,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,CatBoost,f1,15,0.0042156667496409195,0.014562614955130873,-0.003154033236290264,0.011585366735572103,Descriptive paired interval; no significance claim.
+Six-tree soft-voting ensemble,CatBoost,brier,15,-0.004168636157083694,0.003641381518141007,-0.006011429460738181,-0.0023258428534292074,Descriptive paired interval; no significance claim.
