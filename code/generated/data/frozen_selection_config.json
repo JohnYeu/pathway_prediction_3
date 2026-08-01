@@ -1,9 +1,12 @@
 {
   "evidence_file_sha256": {
-    "code/generated/tables/go_feature_count_cv_summary.csv": "cf9effafd5265a44f514766cf8c8beee9c48b74e2067abd691e70c3d79ff37b7",
-    "code/generated/tables/model_comparison.csv": "31d654163fe09f532445200afc7eb631c21077c45829232ea86e11e43fe39be9",
+    "code/generated/data/selected_tree_hyperparameters.json": "c298858bbee6971c7f8067f495bbf7be2b1fee3111225722abc33632b59a9e3f",
+    "code/generated/tables/go_feature_count_cv_summary.csv": "fa12ca591a502bd019d9f95e1d1d17df673217ef2cec253af2245e1b01ff31c0",
+    "code/generated/tables/model_comparison.csv": "826246b9a9d1ef17819925be3602e56261dbb27e32abfb0e41610dc7d4024b45",
     "code/generated/tables/ratio_cv_consensus_summary.csv": "67bd3e98c1ac8ead00768853a52c9442c0eddc6cb1f24178151d616823b51e26",
-    "code/generated/tables/tree_ensemble_cv.csv": "1347e6b67a5b29030667d12908f0247efbfe13f5c3c9b23b72ad02d1d7a95c47"
+    "code/generated/tables/tree_ensemble_cv.csv": "1347e6b67a5b29030667d12908f0247efbfe13f5c3c9b23b72ad02d1d7a95c47",
+    "code/generated/tables/tree_hyperparameter_tuning_summary.csv": "6386b9a784ae0e6050acd94b9cc3f30a0c0369f9802d01022f948b0e983de23a",
+    "code/generated/tables/tree_tuned_ensemble_cv.csv": "50d34c1c7aaba3719d9b28246588492d791599e51da3c138a7561a8efcd3f55a"
   },
   "final_stage_order": [
     "main",
@@ -14,15 +17,49 @@
     "n_go_terms": 60,
     "n_total_features": 69,
     "primary_model": "Six-tree soft-voting ensemble",
-    "primary_ratio": "1:1"
+    "primary_ratio": "1:1",
+    "tree_hyperparameters": {
+      "CatBoost": {
+        "depth": 6,
+        "iterations": 300,
+        "learning_rate": 0.03
+      },
+      "Extra Trees": {
+        "max_depth": null,
+        "max_features": 0.5,
+        "n_estimators": 500
+      },
+      "Gradient Boosting": {
+        "learning_rate": 0.03,
+        "max_depth": 3,
+        "n_estimators": 200
+      },
+      "LightGBM": {
+        "learning_rate": 0.03,
+        "max_depth": 5,
+        "n_estimators": 300,
+        "num_leaves": 63
+      },
+      "Random Forest": {
+        "max_depth": null,
+        "max_features": "sqrt",
+        "n_estimators": 500
+      },
+      "XGBoost": {
+        "learning_rate": 0.03,
+        "max_depth": 5,
+        "n_estimators": 300
+      }
+    }
   },
   "outer_test_used_for_selection": false,
   "run_mode": "full",
-  "schema_version": 1,
+  "schema_version": 2,
   "selection_stage_order": [
     "ratio",
     "models",
-    "go-count"
+    "go-count",
+    "tune"
   ],
   "status": "frozen_before_final_stage",
   "training_only_evidence": {
@@ -59,6 +96,23 @@
       "best_mean_f1_ratio": "1:1",
       "best_mean_normalized_auprc_ratio": "1:1",
       "supports_frozen_ratio": true
+    },
+    "tree_hyperparameters": {
+      "configs_per_model": 12,
+      "outer_test_used": false,
+      "protocol": "training_only_repeated_cv_model_specific_small_grids",
+      "selected_config_ids": {
+        "CatBoost": "catboost_05",
+        "Extra Trees": "extra_trees_12",
+        "Gradient Boosting": "gradient_boosting_01",
+        "LightGBM": "lightgbm_03",
+        "Random Forest": "random_forest_11",
+        "XGBoost": "xgboost_03"
+      },
+      "selected_parameters_sha256": "3b783a0b931064e536e1b04baefa3c27bc05b7099539b92e10de0b4f7d19bc64",
+      "supports_frozen_parameters": true,
+      "tuned_ensemble_mean_auroc": 0.8482485678794134,
+      "tuned_ensemble_sd_auroc": 0.0201896555499366
     }
   }
 }

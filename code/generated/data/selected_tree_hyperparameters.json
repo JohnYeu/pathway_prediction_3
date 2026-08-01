@@ -1,0 +1,56 @@
+{
+  "configs_per_model": 12,
+  "n_folds": 15,
+  "outer_test_used": false,
+  "parameters": {
+    "CatBoost": {
+      "depth": 6,
+      "iterations": 300,
+      "learning_rate": 0.03
+    },
+    "Extra Trees": {
+      "max_depth": null,
+      "max_features": 0.5,
+      "n_estimators": 500
+    },
+    "Gradient Boosting": {
+      "learning_rate": 0.03,
+      "max_depth": 3,
+      "n_estimators": 200
+    },
+    "LightGBM": {
+      "learning_rate": 0.03,
+      "max_depth": 5,
+      "n_estimators": 300,
+      "num_leaves": 63
+    },
+    "Random Forest": {
+      "max_depth": null,
+      "max_features": "sqrt",
+      "n_estimators": 500
+    },
+    "XGBoost": {
+      "learning_rate": 0.03,
+      "max_depth": 5,
+      "n_estimators": 300
+    }
+  },
+  "protocol": "training_only_repeated_cv_model_specific_small_grids",
+  "schema_version": 1,
+  "selected_config_ids": {
+    "CatBoost": "catboost_05",
+    "Extra Trees": "extra_trees_12",
+    "Gradient Boosting": "gradient_boosting_01",
+    "LightGBM": "lightgbm_03",
+    "Random Forest": "random_forest_11",
+    "XGBoost": "xgboost_03"
+  },
+  "selected_parameters_sha256": "3b783a0b931064e536e1b04baefa3c27bc05b7099539b92e10de0b4f7d19bc64",
+  "selection_rule": [
+    "highest mean AUROC",
+    "highest mean AUPRC",
+    "highest mean F1",
+    "lowest AUROC SD",
+    "stable configuration ID"
+  ]
+}

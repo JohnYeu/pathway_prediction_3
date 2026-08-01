@@ -15,8 +15,8 @@
     "LightGBM",
     "CatBoost"
   ],
-  "ensemble_base_value": 0.5263202435394567,
-  "ensemble_max_abs_additivity_error": 0.0010784292177223737,
+  "ensemble_base_value": 0.5244883676856396,
+  "ensemble_max_abs_additivity_error": 0.0015959734576069667,
   "feature_perturbation": "interventional",
   "global_importance": "mean_absolute_value_of_averaged_local_attributions",
   "local_value_aggregation": "signed_arithmetic_mean_across_components",

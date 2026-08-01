@@ -1,7 +1,7 @@
 {
   "args": {
     "dataset_source": "raw",
-    "full": false,
+    "full": true,
     "out_dir": "code/generated",
     "primary_ratio": 1,
     "quick": false,
@@ -20,10 +20,11 @@
     "go_feature_count_cv": "fold_train_only_for_variance_and_mutual_information",
     "heldout_models": "outer_train_only",
     "model_comparison_cv": "fold_train_only_for_variance_and_mutual_information",
-    "ratio_cv": "fold_train_only_for_variance_and_mutual_information"
+    "ratio_cv": "fold_train_only_for_variance_and_mutual_information",
+    "tree_hyperparameter_tuning_cv": "fold_train_only_with_shared_fold_specific_go_representation"
   },
   "formal_full_run": true,
-  "git_commit": "9376e9ed8c38927f7c20bca455498326ab621b15",
+  "git_commit": "689353b265910e3519f4ff33fc9308ae0a8ff089",
   "go_selection_mode": "outer_train_fixed60_with_nested_ratio_cv",
   "hardware_profile": {
     "chip": "Apple M2 Pro",
@@ -56,26 +57,26 @@
       "available": true,
       "parameters": {
         "allow_writing_files": false,
-        "depth": 5,
-        "iterations": 500,
+        "depth": 6,
+        "iterations": 300,
         "learning_rate": 0.03,
         "random_seed": 42,
         "scale_pos_weight_rule": "dynamic_n_negative_train_over_n_positive_train",
-        "thread_count": -1
+        "thread_count": 1
       }
     },
     "Extra Trees": {
       "class_weight": "balanced",
-      "max_depth": 10,
-      "max_features": "sqrt",
+      "max_depth": null,
+      "max_features": 0.5,
       "n_estimators": 500,
       "n_jobs": 1,
       "random_state": 42
     },
     "Gradient Boosting": {
-      "learning_rate": 0.05,
-      "max_depth": 4,
-      "n_estimators": 300,
+      "learning_rate": 0.03,
+      "max_depth": 3,
+      "n_estimators": 200,
       "random_state": 42,
       "subsample": 0.8
     },
@@ -85,8 +86,8 @@
         "colsample_bytree": 0.7,
         "learning_rate": 0.03,
         "max_depth": 5,
-        "n_estimators": 500,
-        "n_jobs": -1,
+        "n_estimators": 300,
+        "n_jobs": 1,
         "num_leaves": 63,
         "random_state": 42,
         "scale_pos_weight_rule": "dynamic_n_negative_train_over_n_positive_train",
@@ -101,7 +102,7 @@
     },
     "Random Forest": {
       "class_weight": "balanced",
-      "max_depth": 10,
+      "max_depth": null,
       "max_features": "sqrt",
       "n_estimators": 500,
       "n_jobs": 1,
@@ -125,8 +126,8 @@
       "learning_rate": 0.03,
       "max_depth": 5,
       "min_child_weight": 3,
-      "n_estimators": 500,
-      "n_jobs": -1,
+      "n_estimators": 300,
+      "n_jobs": 1,
       "objective": "binary:logistic",
       "random_state": 42,
       "reg_alpha": 0.1,
@@ -149,7 +150,8 @@
     "Source-derived negative controls are generated independently on each split side.",
     "Six-tree soft-voting ensemble is the primary model for held-out evaluation and downstream analyses.",
     "The 12 base models are compared on shared outer-training CV folds; the six-tree ensemble is derived by averaging its component probabilities within those folds.",
-    "Neither the base-model comparison nor the derived ensemble uses the outer test set during model selection."
+    "Neither the base-model comparison nor the derived ensemble uses the outer test set during model selection.",
+    "Each tree component uses parameters selected by the declared training-only repeated-CV search; the outer test set is excluded from tuning."
   ],
   "output_dir": "code/generated",
   "paper_output_map": {
@@ -166,7 +168,8 @@
     "negative_metadata": "tables/negative_metadata.csv",
     "pathway_grouping": "data/pathway_source_records.json, data/pathway_gene_set_groups.json, and tables/pathway_grouping_summary.csv",
     "primary_split_audit": "tables/main_split_audit.csv and data/main_split.json",
-    "training_only_ratio_cv": "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, tables/ratio_cv_consensus_summary.csv, data/ratio_cv_manifest.json, and figures/Fig7_robustness.png"
+    "training_only_ratio_cv": "tables/ratio_cv_per_fold.csv, tables/ratio_cv_summary.csv, tables/ratio_cv_consensus_summary.csv, data/ratio_cv_manifest.json, and figures/Fig7_robustness.png",
+    "tree_hyperparameter_tuning": "tables/tree_hyperparameter_tuning_per_fold.csv, tables/tree_hyperparameter_tuning_summary.csv, tables/tree_hyperparameter_selected.csv, tables/tree_tuned_ensemble_cv.csv, data/selected_tree_hyperparameters.json, data/tree_hyperparameter_tuning_manifest.json, and figures/tree_hyperparameter_tuning.png"
   },
   "paper_result": true,
   "paper_text_synchronized": false,
@@ -306,9 +309,9 @@
     "primary_split_sha256": "2c3c59b8cc5c7b23a557bc21e4a3aa2cc40925da6a6b4e78cc63c4b94624a390",
     "scale_pos_weight_summary": {
       "max": 5.0,
-      "mean": 2.25,
+      "mean": 2.111111111111111,
       "min": 1.0,
-      "n_records": 120,
+      "n_records": 135,
       "rule": "dynamic_n_negative_train_over_n_positive_train"
     },
     "sections_run": [
@@ -316,6 +319,7 @@
       "ratio",
       "go-count",
       "models",
+      "tune",
       "ablation",
       "importance"
     ],
@@ -331,7 +335,11 @@
       "heldout_score_by_type.csv": 5,
       "main_benchmark.csv": 1,
       "model_comparison.csv": 12,
-      "ratio_sensitivity.csv": 5
+      "ratio_sensitivity.csv": 5,
+      "tree_hyperparameter_selected.csv": 6,
+      "tree_hyperparameter_tuning_per_fold.csv": 1080,
+      "tree_hyperparameter_tuning_summary.csv": 72,
+      "tree_tuned_ensemble_cv.csv": 1
     }
   },
   "run_mode": "full",
@@ -339,9 +347,9 @@
   "scale_pos_weight_rule": "dynamic_n_negative_train_over_n_positive_train",
   "scale_pos_weight_summary": {
     "max": 5.0,
-    "mean": 2.25,
+    "mean": 2.111111111111111,
     "min": 1.0,
-    "n_records": 120,
+    "n_records": 135,
     "rule": "dynamic_n_negative_train_over_n_positive_train"
   },
   "sections_run": [
@@ -349,23 +357,59 @@
     "ratio",
     "go-count",
     "models",
+    "tune",
     "ablation",
     "importance"
   ],
   "selected_go_sha256": "d832338fd932d1c78547f031acb30cc4ab7ff678230ccb5e3420815818fc2437",
+  "selected_tree_hyperparameters_sha256": "3b783a0b931064e536e1b04baefa3c27bc05b7099539b92e10de0b4f7d19bc64",
   "selection_configuration": {
     "frozen_configuration": {
       "n_go_terms": 60,
       "n_total_features": 69,
       "primary_model": "Six-tree soft-voting ensemble",
-      "primary_ratio": "1:1"
+      "primary_ratio": "1:1",
+      "tree_hyperparameters": {
+        "CatBoost": {
+          "depth": 6,
+          "iterations": 300,
+          "learning_rate": 0.03
+        },
+        "Extra Trees": {
+          "max_depth": null,
+          "max_features": 0.5,
+          "n_estimators": 500
+        },
+        "Gradient Boosting": {
+          "learning_rate": 0.03,
+          "max_depth": 3,
+          "n_estimators": 200
+        },
+        "LightGBM": {
+          "learning_rate": 0.03,
+          "max_depth": 5,
+          "n_estimators": 300,
+          "num_leaves": 63
+        },
+        "Random Forest": {
+          "max_depth": null,
+          "max_features": "sqrt",
+          "n_estimators": 500
+        },
+        "XGBoost": {
+          "learning_rate": 0.03,
+          "max_depth": 5,
+          "n_estimators": 300
+        }
+      }
     },
     "path": "code/generated/data/frozen_selection_config.json",
-    "sha256": "c0a1fc16b268a3bcbb644251c537e7edfa7743390b98c83f7bfd2c7f695f360f",
+    "sha256": "ede3644c67bfdbba2b15ede12f860fc7f1c414474cd31397a612565d5a61c32a",
     "stage_order": [
       "ratio",
       "models",
-      "go-count"
+      "go-count",
+      "tune"
     ],
     "status": "frozen_before_final_stage"
   },
@@ -392,7 +436,16 @@
     "test_negatives": 242,
     "train_negatives": 142
   },
-  "timestamp_utc": "2026-07-31T23:30:04.078602+00:00",
+  "timestamp_utc": "2026-08-01T02:35:23.173918+00:00",
+  "tree_hyperparameter_selection_rule": [
+    "highest mean AUROC",
+    "highest mean AUPRC",
+    "highest mean F1",
+    "lowest AUROC SD",
+    "stable configuration ID"
+  ],
+  "tree_hyperparameter_tuning_outer_test_used": false,
+  "tree_hyperparameter_tuning_protocol": "training_only_repeated_cv_model_specific_small_grids",
   "working_tree_dirty": true,
   "working_tree_dirty_scope": "source tree excluding code/generated* and the active output directory"
 }

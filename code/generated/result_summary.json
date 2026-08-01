@@ -46,9 +46,9 @@
   "primary_split_sha256": "2c3c59b8cc5c7b23a557bc21e4a3aa2cc40925da6a6b4e78cc63c4b94624a390",
   "scale_pos_weight_summary": {
     "max": 5.0,
-    "mean": 2.25,
+    "mean": 2.111111111111111,
     "min": 1.0,
-    "n_records": 120,
+    "n_records": 135,
     "rule": "dynamic_n_negative_train_over_n_positive_train"
   },
   "sections_run": [
@@ -56,6 +56,7 @@
     "ratio",
     "go-count",
     "models",
+    "tune",
     "ablation",
     "importance"
   ],
@@ -71,6 +72,10 @@
     "heldout_score_by_type.csv": 5,
     "main_benchmark.csv": 1,
     "model_comparison.csv": 12,
-    "ratio_sensitivity.csv": 5
+    "ratio_sensitivity.csv": 5,
+    "tree_hyperparameter_selected.csv": 6,
+    "tree_hyperparameter_tuning_per_fold.csv": 1080,
+    "tree_hyperparameter_tuning_summary.csv": 72,
+    "tree_tuned_ensemble_cv.csv": 1
   }
 }
